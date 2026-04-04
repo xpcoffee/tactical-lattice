@@ -27,7 +27,7 @@ const SVG_H = PAD * 2 + HEX_SIZE * Math.sqrt(3) * (ROWS + 0.5)
 export default function Minimap() {
   return (
     <div style={{ padding: '6px 8px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-      <div style={{ fontSize: '9px', color: '#3a3a5a', letterSpacing: '0.12em' }}>TACTICAL MAP</div>
+      <div style={{ fontSize: '9px', color: '#e6c200', letterSpacing: '0.12em' }}>TACTICAL MAP</div>
       <svg
         width={SVG_W}
         height={SVG_H}
@@ -41,7 +41,7 @@ export default function Minimap() {
                 key={`${col}-${row}`}
                 d={hexPath(x, y)}
                 fill="none"
-                stroke="#2a2a4a"
+                stroke="#4a4a7a"
                 strokeWidth={0.8}
               />
             )
