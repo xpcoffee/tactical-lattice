@@ -4,6 +4,7 @@ FROM node:20-bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends \
     # Virtual framebuffer — provides a display without a window manager
     xvfb \
+    xauth \
     # GTK and accessibility
     libgtk-3-0 \
     libatk1.0-0 \
@@ -33,7 +34,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libcairo2 \
     # Audio (Electron links against it even when unused)
     libasound2 \
+    # xdpyinfo — used by entrypoint to wait until Xvfb is ready
+    x11-utils \
     && rm -rf /var/lib/apt/lists/*
+
+# Tell launch.ts to pass --no-sandbox (required when running as root in Docker)
+ENV CI=true
 
 WORKDIR /app
 
@@ -45,8 +51,9 @@ RUN npm ci
 COPY . .
 RUN npm run build
 
-# Run e2e tests under a virtual display
-# --auto-servernum picks a free display number
-# -screen 0 1280x800x24 matches the default Electron window size
-CMD ["xvfb-run", "--auto-servernum", "--server-args=-screen 0 1280x800x24", \
-     "npx", "playwright", "test"]
+COPY ci/entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+# entrypoint.sh starts Xvfb on :99 with access control disabled, then execs the command
+ENTRYPOINT ["/entrypoint.sh"]
+CMD ["npx", "playwright", "test"]
