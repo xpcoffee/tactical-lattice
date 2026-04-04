@@ -13,7 +13,7 @@ import { GRID_COLS, GRID_ROWS, VIEW_RANGE, SENSOR_RANGE } from '../../game/const
 // Isometric rendering constants
 const ISO_HEX_SIZE = 120
 const ISO_SCALE_Y  = 0.35  // flatter ground plane
-const CAMERA_OFFSET = -Math.PI / 6  // 30° left of directly behind player
+const CAMERA_OFFSET = Math.PI / 6  // 30° right of directly behind player (camera to the left)
 // Mech anchor: feet of the mech sprite in screen space (bottom-left area)
 const ANCHOR_X_RATIO = 0.35
 const ANCHOR_Y_RATIO = 0.70
@@ -53,17 +53,21 @@ export class Combat extends Phaser.Scene {
     })
   }
 
-  // Convert a hex relative to the player into isometric screen coordinates.
-  private hexToIsoScreen(relHex: { q: number; r: number }): { x: number; y: number } {
-    const cart = hexToPixel(relHex, ISO_HEX_SIZE)
+  // Apply world rotation + isometric y-compression to any point in pixel-world space.
+  // All hex centers AND vertices must go through this so the grid rotates as a unit.
+  private worldToScreen(wx: number, wy: number): { x: number; y: number } {
     const angle = (this.state.facing - 2) * Math.PI / 3 + CAMERA_OFFSET
     const cos = Math.cos(angle), sin = Math.sin(angle)
-    const rx = cart.x * cos - cart.y * sin
-    const ry = cart.x * sin + cart.y * cos
     return {
-      x: this.playerAnchor.x + rx,
-      y: this.playerAnchor.y + ry * ISO_SCALE_Y,
+      x: this.playerAnchor.x + wx * cos - wy * sin,
+      y: this.playerAnchor.y + (wx * sin + wy * cos) * ISO_SCALE_Y,
     }
+  }
+
+  // Convert a hex relative to the player into isometric screen coordinates.
+  private hexToIsoScreen(relHex: { q: number; r: number }): { x: number; y: number } {
+    const { x, y } = hexToPixel(relHex, ISO_HEX_SIZE)
+    return this.worldToScreen(x, y)
   }
 
   private drawHexGrid(): void {
@@ -71,20 +75,22 @@ export class Combat extends Phaser.Scene {
     this.gridGfx.lineStyle(1, 0x4a4a7a, 1)
 
     const player = this.state.playerPosition
-    // Only render the player hex + the visible cone (VIEW_RANGE radius)
     const coneHexes = hexesInCone(player, this.state.facing, VIEW_RANGE, GRID_COLS, GRID_ROWS)
     const hexesToDraw = [player, ...coneHexes]
 
     for (const h of hexesToDraw) {
       const rel = { q: h.q - player.q, r: h.r - player.r }
-      const { x, y } = this.hexToIsoScreen(rel)
+      const center = hexToPixel(rel, ISO_HEX_SIZE)
       this.gridGfx.beginPath()
       for (let i = 0; i < 6; i++) {
-        const angle = (Math.PI / 3) * i
-        const px = x + ISO_HEX_SIZE * Math.cos(angle)
-        const py = y + ISO_HEX_SIZE * Math.sin(angle) * ISO_SCALE_Y
-        if (i === 0) this.gridGfx.moveTo(px, py)
-        else this.gridGfx.lineTo(px, py)
+        const vAngle = (Math.PI / 3) * i
+        // Each vertex in pixel-world space, then transformed to screen
+        const { x, y } = this.worldToScreen(
+          center.x + ISO_HEX_SIZE * Math.cos(vAngle),
+          center.y + ISO_HEX_SIZE * Math.sin(vAngle),
+        )
+        if (i === 0) this.gridGfx.moveTo(x, y)
+        else this.gridGfx.lineTo(x, y)
       }
       this.gridGfx.closePath()
       this.gridGfx.strokePath()
