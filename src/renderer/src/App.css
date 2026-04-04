@@ -60,14 +60,11 @@
   overflow: hidden;
   box-shadow: 0 0 8px rgba(230, 194, 0, 0.3);
   transition: all 200ms ease-in-out;
+  transform-origin: top right;
 }
 
-/* Full-screen minimap in move-select mode */
+/* Full-screen minimap in move-select mode — expands from top-right corner */
 .panel-minimap--fullscreen {
-  top: 0;
-  right: 0;
-  bottom: 0;
-  left: 0;
   width: 100vw;
   height: 100vh;
   border-radius: 0;

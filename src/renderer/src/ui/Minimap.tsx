@@ -15,10 +15,12 @@ interface MinimapProps {
   onMoveConfirm: (target: HexCoord) => void
 }
 
+// Axial flat-top formula — matches hexToPixel() so grid cells, player, entities, and
+// move targets all share the same coordinate system.
 function hexCenter(col: number, row: number): { x: number; y: number } {
   return {
-    x: PAD + HEX_SIZE + HEX_SIZE * 1.5 * col,
-    y: PAD + HEX_SIZE + HEX_SIZE * Math.sqrt(3) * (row + (col % 2) * 0.5),
+    x: PAD + HEX_SIZE + HEX_SIZE * (3 / 2) * col,
+    y: PAD + HEX_SIZE + HEX_SIZE * (Math.sqrt(3) / 2 * col + Math.sqrt(3) * row),
   }
 }
 
