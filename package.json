@@ -9,7 +9,8 @@
     "package": "electron-vite build && electron-builder",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:e2e": "xvfb-run --auto-servernum --server-args='-screen 0 1280x800x24' npx playwright test"
+    "test:e2e": "xvfb-run --auto-servernum --server-args='-screen 0 1280x800x24' npx playwright test",
+    "test:e2e:docker": "docker build -f ci/Dockerfile -t tactical-lattice-ci . && docker run --rm tactical-lattice-ci"
   },
   "dependencies": {
     "bitecs": "^0.3.40",
