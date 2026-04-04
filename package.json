@@ -4,7 +4,7 @@
   "description": "Tactical mech combat game",
   "main": "out/main/index.js",
   "scripts": {
-    "dev": "electron-vite dev",
+    "dev": "NODE_OPTIONS=--no-deprecation electron-vite dev -- --log-level=3",
     "build": "electron-vite build",
     "package": "electron-vite build && electron-builder",
     "test": "vitest run",

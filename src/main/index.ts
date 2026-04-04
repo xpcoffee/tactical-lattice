@@ -1,6 +1,11 @@
 import { app, BrowserWindow } from 'electron'
 import { join } from 'path'
 
+// Suppress Chromium ERROR-level log noise (D-Bus unavailable in WSL2 / minimal Linux envs).
+// Level 3 = FATAL only; keeps our own console output intact.
+app.commandLine.appendSwitch('log-level', '3')
+app.commandLine.appendSwitch('disable-features', 'MediaSessionService,HardwareMediaKeyHandling')
+
 function createWindow(): void {
   const win = new BrowserWindow({
     width: 1280,
