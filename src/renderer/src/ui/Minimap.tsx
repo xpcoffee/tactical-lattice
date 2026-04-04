@@ -1,19 +1,17 @@
-// Minimap: compact hex grid overlay (idle) or full-screen tactical view (move-select).
-// Positional awareness only — actions are taken via the move-select mode.
+// Minimap: player-centric top-down tactical view.
+// Vision cone always faces up — the world rotates around a fixed player dot.
+// Shows visual range (blue) and sensor range (dim blue) cone highlights.
 //
-// Coordinate systems:
-//   Game state uses AXIAL coords (q, r).
-//   The visual grid uses OFFSET coords (col, row) — the (col % 2) * 0.5 stagger
-//   that produces a rectangular grid layout.
-//   axialToOffset / offsetToAxial convert between them.
+// Coordinate system: axial (q, r) converted to flat-top pixel via hexToPixel,
+// with positions relative to the player (player always at SVG centre).
 
 import { useState, useEffect } from 'react'
 import { EventBus } from '../phaser/EventBus'
 import { CombatState, COMBAT_STATE_CHANGED, getLatestState, getMoveTargets } from '../game/state/combat'
-import { type HexCoord, DIRECTIONS } from '../game/hex/grid'
+import { type HexCoord, DIRECTIONS, hexToPixel, hexDistance, hexesInCone } from '../game/hex/grid'
+import { VIEW_RANGE, SENSOR_RANGE, GRID_COLS, GRID_ROWS } from '../game/constants'
 
-const HEX_SIZE = 8
-const PAD = 6
+const MINI_HEX_SIZE = 12
 const MOVE_RANGE = 3
 
 interface MinimapProps {
@@ -21,51 +19,22 @@ interface MinimapProps {
   onMoveConfirm: (target: HexCoord) => void
 }
 
-// Offset grid — renders a rectangular layout.
-function hexCenter(col: number, row: number): { x: number; y: number } {
-  return {
-    x: PAD + HEX_SIZE + HEX_SIZE * 1.5 * col,
-    y: PAD + HEX_SIZE + HEX_SIZE * Math.sqrt(3) * (row + (col % 2) * 0.5),
-  }
-}
-
-function hexPath(cx: number, cy: number): string {
+// Pixel path for a flat-top hex centred at (cx, cy).
+function hexPath(cx: number, cy: number, size: number): string {
   const pts = Array.from({ length: 6 }, (_, i) => {
     const angle = (Math.PI / 3) * i
-    return `${cx + HEX_SIZE * Math.cos(angle)},${cy + HEX_SIZE * Math.sin(angle)}`
+    return `${cx + size * Math.cos(angle)},${cy + size * Math.sin(angle)}`
   })
   return `M ${pts[0]} ${pts.slice(1).map(p => `L ${p}`).join(' ')} Z`
 }
 
-// Axial → offset: col = q, row = r + floor(q / 2)
-function axialToOffset(h: HexCoord): { col: number; row: number } {
-  return { col: h.q, row: h.r + Math.floor(h.q / 2) }
-}
-
-// Offset → axial (inverse of above)
-function offsetToAxial(col: number, row: number): HexCoord {
-  return { q: col, r: row - Math.floor(col / 2) }
-}
-
-// Maps an axial game position to SVG pixel coordinates in the offset grid.
-function entitySVGPos(pos: HexCoord): { x: number; y: number } {
-  const { col, row } = axialToOffset(pos)
-  return hexCenter(col, row)
-}
-
-// Returns SVG polygon points for a facing arrow centred at (cx, cy).
-// Uses the offset-grid direction vector to stay consistent with entity positions.
-function facingArrowPoints(cx: number, cy: number, facing: number): string {
+// Rotation (degrees) that puts the facing direction straight up in SVG space.
+function facingRotation(facing: number): number {
   const dir = DIRECTIONS[facing]
-  const raw = {
-    x: HEX_SIZE * 1.5 * dir.q,
-    y: HEX_SIZE * Math.sqrt(3) * (dir.r + dir.q * 0.5),
-  }
-  const len = Math.sqrt(raw.x * raw.x + raw.y * raw.y)
-  const ux = raw.x / len, uy = raw.y / len
-  const tip = { x: cx + ux * HEX_SIZE * 0.85, y: cy + uy * HEX_SIZE * 0.85 }
-  const perp = { x: -uy * 2, y: ux * 2 }
-  return `${tip.x},${tip.y} ${cx + perp.x},${cy + perp.y} ${cx - perp.x},${cy - perp.y}`
+  const dx = MINI_HEX_SIZE * 1.5 * dir.q
+  const dy = MINI_HEX_SIZE * Math.sqrt(3) * (dir.r + dir.q * 0.5)
+  const angleDeg = Math.atan2(dy, dx) * (180 / Math.PI)
+  return -90 - angleDeg
 }
 
 export default function Minimap({ mode, onMoveConfirm }: MinimapProps) {
@@ -77,23 +46,48 @@ export default function Minimap({ mode, onMoveConfirm }: MinimapProps) {
     return () => { EventBus.off(COMBAT_STATE_CHANGED, handler) }
   }, [])
 
-  const COLS = mode === 'move-select' ? 15 : 10
-  const ROWS = mode === 'move-select' ? 15 : 10
-  const svgW = PAD * 2 + HEX_SIZE * (1.5 * COLS + 0.5)
-  const svgH = PAD * 2 + HEX_SIZE * Math.sqrt(3) * (ROWS + 0.5)
+  const isFullscreen = mode === 'move-select'
+  // Size the viewbox around SENSOR_RANGE hexes in each direction.
+  const viewRadius = (SENSOR_RANGE + 1) * MINI_HEX_SIZE * 2
+  const svgSize = viewRadius * 2
+  const cx = svgSize / 2
+  const cy = svgSize / 2
 
-  // Move targets in axial space; convert to offset keys for the grid cell lookup.
-  const moveTargets = mode === 'move-select'
-    ? getMoveTargets(combatState.playerPosition, combatState.entities, MOVE_RANGE, COLS, ROWS)
-    : []
-  const moveTargetSet = new Set(
-    moveTargets.map(h => { const o = axialToOffset(h); return `${o.col}-${o.row}` })
+  const { playerPosition, facing, entities } = combatState
+  const rotateDeg = facingRotation(facing)
+
+  // Compute cone hex sets for highlighting.
+  const sensorConeSet = new Set(
+    hexesInCone(playerPosition, facing, SENSOR_RANGE, GRID_COLS, GRID_ROWS).map(h => `${h.q},${h.r}`)
+  )
+  const visualConeSet = new Set(
+    hexesInCone(playerPosition, facing, VIEW_RANGE, GRID_COLS, GRID_ROWS).map(h => `${h.q},${h.r}`)
   )
 
-  // Player offset position for highlighting the correct grid cell.
-  const playerOffset = axialToOffset(combatState.playerPosition)
+  // Move targets (only relevant in move-select mode).
+  const moveTargets = isFullscreen
+    ? getMoveTargets(playerPosition, entities, MOVE_RANGE, GRID_COLS, GRID_ROWS)
+    : []
+  const moveTargetSet = new Set(moveTargets.map(h => `${h.q},${h.r}`))
 
-  const isFullscreen = mode === 'move-select'
+  // All hexes to render: SENSOR_RANGE radius around player, plus move targets.
+  const renderHexes: HexCoord[] = []
+  for (let q = playerPosition.q - SENSOR_RANGE - 1; q <= playerPosition.q + SENSOR_RANGE + 1; q++) {
+    for (let r = playerPosition.r - SENSOR_RANGE - 1; r <= playerPosition.r + SENSOR_RANGE + 1; r++) {
+      if (q < 0 || q >= GRID_COLS || r < 0 || r >= GRID_ROWS) continue
+      const d = hexDistance({ q, r }, playerPosition)
+      if (d <= SENSOR_RANGE || moveTargetSet.has(`${q},${r}`)) {
+        renderHexes.push({ q, r })
+      }
+    }
+  }
+
+  // Pixel position relative to SVG centre for a hex.
+  function hexSVGPos(h: HexCoord): { x: number; y: number } {
+    const rel = { q: h.q - playerPosition.q, r: h.r - playerPosition.r }
+    const p = hexToPixel(rel, MINI_HEX_SIZE)
+    return { x: cx + p.x, y: cy + p.y }
+  }
 
   return (
     <div style={{
@@ -118,81 +112,76 @@ export default function Minimap({ mode, onMoveConfirm }: MinimapProps) {
         </div>
       )}
       <svg
-        width={isFullscreen ? '100%' : svgW}
-        height={isFullscreen ? '100%' : svgH}
-        viewBox={isFullscreen ? `0 0 ${svgW} ${svgH}` : undefined}
-        preserveAspectRatio={isFullscreen ? 'xMidYMid meet' : undefined}
+        width={isFullscreen ? '100%' : svgSize}
+        height={isFullscreen ? '100%' : svgSize}
+        viewBox={`0 0 ${svgSize} ${svgSize}`}
+        preserveAspectRatio="xMidYMid meet"
         style={{ display: 'block', flex: isFullscreen ? '1' : undefined }}
       >
-        {Array.from({ length: COLS }, (_, col) =>
-          Array.from({ length: ROWS }, (_, row) => {
-            const { x, y } = hexCenter(col, row)
-            const key = `${col}-${row}`
-            const isTarget = moveTargetSet.has(key)
-            const isPlayer = col === playerOffset.col && row === playerOffset.row
+        {/* Rotated world: cone always faces up */}
+        <g transform={`rotate(${rotateDeg}, ${cx}, ${cy})`}>
+          {renderHexes.map(h => {
+            const { x, y } = hexSVGPos(h)
+            const key = `${h.q},${h.r}`
+            const inVisual  = visualConeSet.has(key)
+            const inSensor  = sensorConeSet.has(key)
+            const isTarget  = moveTargetSet.has(key)
 
             return (
               <path
                 key={key}
-                d={hexPath(x, y)}
+                d={hexPath(x, y, MINI_HEX_SIZE)}
                 fill={
-                  isFullscreen && isPlayer ? 'rgba(230,194,0,0.2)' :
                   isFullscreen && isTarget ? 'rgba(100,200,100,0.18)' :
+                  inVisual  ? 'rgba(74,122,255,0.18)' :
+                  inSensor  ? 'rgba(42,74,106,0.12)'  :
                   'none'
                 }
                 stroke={isFullscreen && isTarget ? '#4aff4a' : '#4a4a7a'}
                 strokeWidth={isFullscreen && isTarget ? 1.2 : 0.8}
                 onClick={
                   isFullscreen && isTarget
-                    ? () => onMoveConfirm(offsetToAxial(col, row))
+                    ? () => onMoveConfirm(h)
                     : undefined
                 }
                 style={{ cursor: isFullscreen && isTarget ? 'pointer' : 'default' }}
               />
             )
-          })
-        )}
+          })}
 
-        {/* Player marker + facing arrow */}
-        {(() => {
-          const { x, y } = entitySVGPos(combatState.playerPosition)
-          return (
-            <>
-              <circle
-                key="player"
-                cx={x}
-                cy={y}
-                r={isFullscreen ? 4 : 3}
-                fill="#e6c200"
+          {/* Entity markers */}
+          {entities.map(e => {
+            const { x, y } = hexSVGPos(e.position)
+            return (
+              <text
+                key={e.id}
+                x={x}
+                y={y}
+                textAnchor="middle"
+                dominantBaseline="central"
+                fontSize="8"
+                fill="#cc4444"
                 style={{ pointerEvents: 'none' }}
-              />
-              <polygon
-                key="facing"
-                points={facingArrowPoints(x, y, combatState.facing)}
-                fill="#e6c200"
-                opacity={0.85}
-                style={{ pointerEvents: 'none' }}
-              />
-            </>
-          )
-        })()}
+              >X</text>
+            )
+          })}
+        </g>
 
-        {/* Entity markers */}
-        {combatState.entities.map(e => {
-          const { x, y } = entitySVGPos(e.position)
-          return (
-            <text
-              key={e.id}
-              x={x}
-              y={y}
-              textAnchor="middle"
-              dominantBaseline="central"
-              fontSize="8"
-              fill="#cc4444"
-              style={{ pointerEvents: 'none' }}
-            >X</text>
-          )
-        })}
+        {/* Player dot — always at centre, outside the rotating group */}
+        <circle
+          cx={cx}
+          cy={cy}
+          r={isFullscreen ? 4 : 3}
+          fill="#e6c200"
+          style={{ pointerEvents: 'none' }}
+        />
+        {/* Static "up" indicator so orientation is clear */}
+        <polygon
+          points={`${cx},${cy - MINI_HEX_SIZE * 0.85} ${cx - 2},${cy - MINI_HEX_SIZE * 0.3} ${cx + 2},${cy - MINI_HEX_SIZE * 0.3}`}
+          fill="#e6c200"
+          opacity={0.7}
+          style={{ pointerEvents: 'none' }}
+        />
       </svg>
     </div>
   )
