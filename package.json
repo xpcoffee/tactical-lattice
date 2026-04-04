@@ -8,7 +8,8 @@
     "build": "electron-vite build",
     "package": "electron-vite build && electron-builder",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "test:e2e": "xvfb-run --auto-servernum --server-args='-screen 0 1280x800x24' npx playwright test"
   },
   "dependencies": {
     "bitecs": "^0.3.40",

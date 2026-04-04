@@ -13,8 +13,15 @@ export interface GameHandle {
  * Requires `npm run build` to have been run first.
  */
 export async function launchGame(): Promise<GameHandle> {
+  const mainPath = path.join(__dirname, '../out/main/index.js')
+
+  // Chromium requires --no-sandbox inside Docker/containers that lack user namespaces
+  const args = process.env['CI']
+    ? ['--no-sandbox', mainPath]
+    : [mainPath]
+
   const app = await electron.launch({
-    args: [path.join(__dirname, '../out/main/index.js')],
+    args,
     env: { ...process.env, NODE_ENV: 'test' },
   })
 
