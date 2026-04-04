@@ -12,7 +12,8 @@ import { GRID_COLS, GRID_ROWS, VIEW_RANGE, SENSOR_RANGE } from '../../game/const
 
 // Isometric rendering constants
 const ISO_HEX_SIZE = 120
-const ISO_SCALE_Y  = 0.55
+const ISO_SCALE_Y  = 0.35  // flatter ground plane
+const CAMERA_OFFSET = -Math.PI / 6  // 30° left of directly behind player
 // Mech anchor: feet of the mech sprite in screen space (bottom-left area)
 const ANCHOR_X_RATIO = 0.35
 const ANCHOR_Y_RATIO = 0.70
@@ -55,7 +56,7 @@ export class Combat extends Phaser.Scene {
   // Convert a hex relative to the player into isometric screen coordinates.
   private hexToIsoScreen(relHex: { q: number; r: number }): { x: number; y: number } {
     const cart = hexToPixel(relHex, ISO_HEX_SIZE)
-    const angle = (this.state.facing - 2) * Math.PI / 3
+    const angle = (this.state.facing - 2) * Math.PI / 3 + CAMERA_OFFSET
     const cos = Math.cos(angle), sin = Math.sin(angle)
     const rx = cart.x * cos - cart.y * sin
     const ry = cart.x * sin + cart.y * cos
