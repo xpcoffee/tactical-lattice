@@ -45,7 +45,7 @@
   box-shadow: 0 0 8px rgba(230, 194, 0, 0.3);
 }
 
-/* Minimap: top-right corner */
+/* Minimap: top-right corner — animates to full-screen in move-select mode */
 .panel-minimap {
   z-index: 10;
   position: absolute;
@@ -59,4 +59,75 @@
   border-radius: 0 0 0 4px;
   overflow: hidden;
   box-shadow: 0 0 8px rgba(230, 194, 0, 0.3);
+  transition: all 200ms ease-in-out;
+}
+
+/* Full-screen minimap in move-select mode */
+.panel-minimap--fullscreen {
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  border-radius: 0;
+  border: none;
+  z-index: 30;
+  background: rgba(8, 8, 14, 0.97);
+}
+
+/* Hide panels without destroying Phaser canvas layout */
+.panel--hidden {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+/* ─── Action HUD ─────────────────────────────────────────────────── */
+
+.panel-action-hud {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 56px;
+  z-index: 40;
+  background: rgba(8, 8, 14, 0.92);
+  border-top: 1px solid #e6c200;
+  display: flex;
+  align-items: center;
+  padding: 0 16px;
+  gap: 16px;
+}
+
+.action-btn {
+  background: none;
+  border: 1px solid #4a4a7a;
+  color: #e0e0e0;
+  font-family: monospace;
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  padding: 6px 12px;
+  cursor: pointer;
+}
+
+.action-btn--active {
+  border-color: #e6c200;
+  color: #e6c200;
+}
+
+.action-btn--selected {
+  background: rgba(230, 194, 0, 0.15);
+  border-color: #e6c200;
+  color: #e6c200;
+}
+
+.action-keybind {
+  color: #888;
+  margin-left: 4px;
+}
+
+.action-cancel {
+  font-size: 10px;
+  color: #888;
+  letter-spacing: 0.08em;
 }

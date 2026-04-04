@@ -10,6 +10,8 @@ import {
 } from '../../game/state/combat'
 
 const HEX_SIZE = 48
+const GRID_COLS = 15
+const GRID_ROWS = 15
 
 export class Combat extends Phaser.Scene {
   private state!: CombatState
@@ -22,8 +24,8 @@ export class Combat extends Phaser.Scene {
   }
 
   create(): void {
-    const gridW = HEX_SIZE * 14.5
-    const gridH = HEX_SIZE * Math.sqrt(3) * 9.5
+    const gridW = HEX_SIZE * (1.5 * (GRID_COLS - 1) + 1)
+    const gridH = HEX_SIZE * Math.sqrt(3) * (GRID_ROWS - 0.5)
     this.gridOffset = {
       x: (this.scale.width - gridW) / 2 + HEX_SIZE,
       y: (this.scale.height - gridH) / 2 + HEX_SIZE,
@@ -39,14 +41,20 @@ export class Combat extends Phaser.Scene {
     setLatestState(this.state)
     EventBus.emit('scene-ready', this)
     EventBus.emit(COMBAT_STATE_CHANGED, this.state)
+
+    // Re-render entities whenever state changes (e.g. after player moves)
+    EventBus.on(COMBAT_STATE_CHANGED, (newState: CombatState) => {
+      this.state = newState
+      this.updateEntities()
+    })
   }
 
   private drawHexGrid(): void {
     const g = this.add.graphics()
     g.lineStyle(1, 0x1a1a2e, 1)
 
-    for (let q = 0; q < 10; q++) {
-      for (let r = 0; r < 10; r++) {
+    for (let q = 0; q < GRID_COLS; q++) {
+      for (let r = 0; r < GRID_ROWS; r++) {
         const { x, y } = hexToPixel({ q, r }, HEX_SIZE)
         const cx = x + this.gridOffset.x
         const cy = y + this.gridOffset.y
@@ -92,5 +100,13 @@ export class Combat extends Phaser.Scene {
         this.entityLabels.set(entity.id, label)
       }
     }
+  }
+
+  private updateEntities(): void {
+    for (const gfx of this.entityGfx.values()) gfx.destroy()
+    for (const lbl of this.entityLabels.values()) lbl.destroy()
+    this.entityGfx.clear()
+    this.entityLabels.clear()
+    this.renderEntities()
   }
 }
