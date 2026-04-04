@@ -4,6 +4,9 @@ import {
   getEntitiesWithDistance,
   getMoveTargets,
   movePlayer,
+  rotateFacing,
+  moveInDirection,
+  getVisibleEntities,
   Entity,
   CombatState,
 } from './combat'
@@ -13,6 +16,7 @@ describe('createInitialCombatState', () => {
   it('returns a valid structure', () => {
     const state = createInitialCombatState()
     expect(state.playerPosition).toEqual({ q: 7, r: 4 })
+    expect(state.facing).toBe(0)
     expect(state.entities.length).toBeGreaterThan(0)
     expect(state.pendingActions).toEqual([])
     for (const e of state.entities) {
@@ -159,5 +163,97 @@ describe('movePlayer', () => {
     const result = movePlayer(state, { q: 8, r: 4 })
     expect(result.pendingActions).toHaveLength(1)
     expect(result.pendingActions[0].ticksRemaining).toBe(2)
+  })
+})
+
+describe('rotateFacing', () => {
+  const base: CombatState = { playerPosition: { q: 5, r: 5 }, facing: 0, entities: [], pendingActions: [] }
+
+  it('rotates CW: 0 → 5 (clockwise in screen space = decrement)', () => {
+    expect(rotateFacing(base, 'cw').facing).toBe(5)
+  })
+
+  it('rotates CCW: 0 → 1 (wraps)', () => {
+    expect(rotateFacing(base, 'ccw').facing).toBe(1)
+  })
+
+  it('six CW rotations return to original facing', () => {
+    let state = base
+    for (let i = 0; i < 6; i++) state = rotateFacing(state, 'cw')
+    expect(state.facing).toBe(0)
+  })
+
+  it('does not change playerPosition or entities', () => {
+    const result = rotateFacing(base, 'cw')
+    expect(result.playerPosition).toEqual(base.playerPosition)
+    expect(result.entities).toBe(base.entities)
+  })
+})
+
+describe('moveInDirection', () => {
+  const COLS = 15, ROWS = 15
+  const base: CombatState = { playerPosition: { q: 7, r: 7 }, facing: 0, entities: [], pendingActions: [] }
+
+  it('forward facing E (0) moves to {q+1}', () => {
+    const result = moveInDirection(base, true, COLS, ROWS)
+    expect(result.playerPosition).toEqual({ q: 8, r: 7 })
+  })
+
+  it('backward facing E (0) moves to {q-1}', () => {
+    const result = moveInDirection(base, false, COLS, ROWS)
+    expect(result.playerPosition).toEqual({ q: 6, r: 7 })
+  })
+
+  it('blocked at boundary: q=0 facing W (3) returns same state', () => {
+    const edge: CombatState = { ...base, playerPosition: { q: 0, r: 7 }, facing: 3 }
+    const result = moveInDirection(edge, true, COLS, ROWS)
+    expect(result).toBe(edge)
+  })
+
+  it('blocked by occupied hex returns same state', () => {
+    const entity: Entity = { id: 1, type: 'mech', label: 'M', position: { q: 8, r: 7 } }
+    const state: CombatState = { ...base, entities: [entity] }
+    const result = moveInDirection(state, true, COLS, ROWS)
+    expect(result).toBe(state)
+  })
+
+  it('costs 1 tick: pending action with 2 ticks remaining → 1', () => {
+    const action = queueAction({ unitId: 1, type: 'fire-heavy' }) // 3 ticks
+    const withAction = { ...base, pendingActions: [{ ...action, ticksRemaining: 2 }] }
+    const result = moveInDirection(withAction, true, COLS, ROWS)
+    expect(result.pendingActions[0].ticksRemaining).toBe(1)
+  })
+
+  it('preserves facing in returned state', () => {
+    const state: CombatState = { ...base, facing: 2 }
+    expect(moveInDirection(state, true, COLS, ROWS).facing).toBe(2)
+  })
+})
+
+describe('getVisibleEntities', () => {
+  const COLS = 15, ROWS = 15
+  // Player at center, facing East (0)
+  const base: CombatState = { playerPosition: { q: 7, r: 7 }, facing: 0, entities: [], pendingActions: [] }
+
+  it('entity directly ahead at distance 2 → isVisible', () => {
+    const state: CombatState = { ...base, entities: [{ id: 1, type: 'mech', label: 'M', position: { q: 9, r: 7 } }] }
+    const [e] = getVisibleEntities(state, 3, 5, COLS, ROWS)
+    expect(e.isVisible).toBe(true)
+    expect(e.isSensor).toBe(false)
+  })
+
+  it('entity ahead at distance 4 → isSensor only', () => {
+    const state: CombatState = { ...base, entities: [{ id: 1, type: 'mech', label: 'M', position: { q: 11, r: 7 } }] }
+    const [e] = getVisibleEntities(state, 3, 5, COLS, ROWS)
+    expect(e.isVisible).toBe(false)
+    expect(e.isSensor).toBe(true)
+  })
+
+  it('entity directly behind → not visible, not sensor', () => {
+    // Facing East; entity to the West
+    const state: CombatState = { ...base, entities: [{ id: 1, type: 'mech', label: 'M', position: { q: 5, r: 7 } }] }
+    const [e] = getVisibleEntities(state, 3, 5, COLS, ROWS)
+    expect(e.isVisible).toBe(false)
+    expect(e.isSensor).toBe(false)
   })
 })
