@@ -36,7 +36,7 @@
   width: 30vw;
   height: 55vh;
   bottom: 0;
-  left: calc(33.333vw - 15vw);
+  left: calc(33.333vw - 25vw);
   background: rgba(8, 8, 14, 0.88);
   border: 1px solid #e6c200;
   border-bottom: none;

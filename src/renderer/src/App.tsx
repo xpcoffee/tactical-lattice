@@ -1,6 +1,6 @@
 import { useRef } from 'react'
 import PhaserGame, { type IRefPhaserGame } from './phaser/PhaserGame'
-import MechStatus from './ui/MechStatus'
+import Mech from './ui/Mech'
 import Minimap from './ui/Minimap'
 
 export default function App() {
@@ -9,7 +9,7 @@ export default function App() {
   return (
     <div className="app-layout">
       <div className="panel-mech-status">
-        <MechStatus />
+        <Mech />
       </div>
       <div className="panel-battlefield">
         <PhaserGame ref={phaserRef} />
