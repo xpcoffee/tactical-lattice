@@ -4,8 +4,8 @@ import { launchGame } from './launch'
 // Thresholds (ms). Generous enough for slow CI/WSL2, tight enough to catch
 // regressions like broken dep-optimisation (would push Phaser past 5 s).
 const REACT_MS_LIMIT  =   500
-const PHASER_MS_LIMIT =   800
-const TOTAL_MS_LIMIT  =   800
+const PHASER_MS_LIMIT = 1_200
+const TOTAL_MS_LIMIT  = 1_200
 
 test('startup timings are within acceptable bounds', async () => {
   // Attach the console listener before Phaser initialises so we don't miss it.

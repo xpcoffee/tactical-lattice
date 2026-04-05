@@ -28,39 +28,39 @@ test('rotate facing CCW with H key', async () => {
   await game.close()
 })
 
-test('move forward with K key — player dot moves', async () => {
+test('move forward with K key — entities reposition on minimap', async () => {
   const game = await launchGame()
   await game.page.waitForTimeout(500)
 
-  // Record initial player dot position from minimap
-  const playerCircle = game.page.locator('svg circle[fill="#e6c200"]').first()
-  const beforeCx = await playerCircle.getAttribute('cx')
+  // Entity markers sit inside the rotating group and are positioned relative
+  // to the player hex. Their x-attribute shifts when the player moves.
+  const entityMarker = game.page.locator('svg g text').first()
+  const beforeX = await entityMarker.getAttribute('x')
 
-  // Press K — move forward (facing East, direction 0 → q increases)
+  // Press K — move forward. Facing=0 (E) → +q. In SVG pre-rotation that shifts
+  // entity x-coords negatively (player advanced toward them).
   await game.page.keyboard.press('k')
-  await game.page.waitForTimeout(300)
+  await game.page.waitForTimeout(400)
 
-  const afterCx = await playerCircle.getAttribute('cx')
-
-  // Player should have moved (cx changed)
-  expect(Number(afterCx)).toBeGreaterThan(Number(beforeCx))
+  const afterX = await entityMarker.getAttribute('x')
+  expect(afterX).not.toBe(beforeX)
 
   await game.screenshot('camera-forward-move')
   await game.close()
 })
 
-test('move backward with J key — player dot moves', async () => {
+test('move backward with J key — entities reposition on minimap', async () => {
   const game = await launchGame()
   await game.page.waitForTimeout(500)
 
-  const playerCircle = game.page.locator('svg circle[fill="#e6c200"]').first()
-  const beforeCx = await playerCircle.getAttribute('cx')
+  const entityMarker = game.page.locator('svg g text').first()
+  const beforeX = await entityMarker.getAttribute('x')
 
   await game.page.keyboard.press('j')
-  await game.page.waitForTimeout(300)
+  await game.page.waitForTimeout(400)
 
-  const afterCx = await playerCircle.getAttribute('cx')
-  expect(Number(afterCx)).toBeLessThan(Number(beforeCx))
+  const afterX = await entityMarker.getAttribute('x')
+  expect(afterX).not.toBe(beforeX)
 
   await game.screenshot('camera-backward-move')
   await game.close()

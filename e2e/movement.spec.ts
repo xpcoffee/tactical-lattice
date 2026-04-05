@@ -44,6 +44,7 @@ test('move-select mode expands minimap and highlights targets', async () => {
 test('escape from move-select returns to idle without moving', async () => {
   const game = await launchGame()
 
+  await expect(game.page.locator('.panel-battlefield')).toBeVisible()
   await game.page.keyboard.press('m')
   await game.page.waitForTimeout(300)
   await expect(game.page.locator('.panel-minimap--fullscreen')).toBeVisible()
