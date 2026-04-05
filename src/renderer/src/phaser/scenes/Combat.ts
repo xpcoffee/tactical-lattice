@@ -26,6 +26,7 @@ const ANCHOR_Y_RATIO = 0.88;
 
 const MOVE_DURATION = 280; // ms — camera glides to new position
 const ROTATE_DURATION = 220; // ms — camera rotates to new facing
+const STRIP_TRANSITION_DURATION = 520; // ms — ground ↔ companion strip glide
 const ENTITY_FADE_DURATION = 350; // ms — entities fade when entering/leaving range
 const HEX_FADE_SPEED = 1 / 0.3; // alpha units/sec — hex outlines fade in 300 ms
 
@@ -155,11 +156,15 @@ export class Combat extends Phaser.Scene {
         this.state, VIEW_RANGE, SENSOR_RANGE, GRID_COLS, GRID_ROWS,
       );
       this.updateEntityStackInfo(visibleEntitiesOld);
-      const oldScreenByEntity = new Map<number, { x: number; y: number }>();
+      const oldScreenByEntity = new Map<
+        number,
+        { x: number; y: number; wasOnStrip: boolean }
+      >();
       for (const e of visibleEntitiesOld) {
         if (!e.isVisible && !e.isSensor) continue;
         const p = this.entityScreenPos(e);
-        if (p) oldScreenByEntity.set(e.id, p);
+        const wasOnStrip = this.entityStackInfo.get(e.id)?.onPlayerHex ?? false;
+        if (p) oldScreenByEntity.set(e.id, { x: p.x, y: p.y, wasOnStrip });
       }
 
       this.state = newState;
@@ -279,7 +284,10 @@ export class Combat extends Phaser.Scene {
   // between the captured from-point and the live target position.
   // Works uniformly across ground→ground, ground→strip, and strip→ground.
   private scheduleEntityGlides(
-    oldScreenByEntity: Map<number, { x: number; y: number }>,
+    oldScreenByEntity: Map<
+      number,
+      { x: number; y: number; wasOnStrip: boolean }
+    >,
   ): void {
     // Refresh stack info with NEW state so entityScreenPos targets are correct.
     const visibleNew = getVisibleEntities(
@@ -300,10 +308,14 @@ export class Combat extends Phaser.Scene {
       if (existing) this.tweens.killTweensOf(existing);
       const glide = { fromX: from.x, fromY: from.y, alpha: 0 };
       this.entityScreenTweens.set(e.id, glide);
+      // Ground↔strip transitions get a longer, more deliberate glide.
+      const isOnStrip = this.entityStackInfo.get(e.id)?.onPlayerHex ?? false;
+      const crossesStrip = from.wasOnStrip !== isOnStrip;
+      const duration = crossesStrip ? STRIP_TRANSITION_DURATION : MOVE_DURATION;
       this.tweens.add({
         targets: glide,
         alpha: 1,
-        duration: MOVE_DURATION,
+        duration,
         ease: "Sine.easeInOut",
         onComplete: () => this.entityScreenTweens.delete(e.id),
       });
