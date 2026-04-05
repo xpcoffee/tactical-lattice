@@ -20,7 +20,9 @@ EventBus.once('scene-ready', () => {
   const reactTime = performance.measure('react-mount', 'app:js-start', 'app:react-mounted').duration
   const phaserTime = performance.measure('phaser-init', 'app:react-mounted', 'app:phaser-ready').duration
   const totalTime  = performance.now() - jsStart
-  console.log(
-    `[startup] react: ${reactTime.toFixed(0)} ms | phaser: ${phaserTime.toFixed(0)} ms | total: ${totalTime.toFixed(0)} ms`
-  )
+  const line = `[startup] react: ${reactTime.toFixed(0)} ms | phaser: ${phaserTime.toFixed(0)} ms | total: ${totalTime.toFixed(0)} ms`
+  console.log(line)
+  // Also store on window so tests can read the numbers without racing the console log.
+  ;(window as unknown as { __startupTimings?: { react: number; phaser: number; total: number } })
+    .__startupTimings = { react: reactTime, phaser: phaserTime, total: totalTime }
 })

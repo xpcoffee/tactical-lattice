@@ -27,6 +27,10 @@ export async function launchGame(): Promise<GameHandle> {
 
   const page = await app.firstWindow()
   await page.waitForLoadState('domcontentloaded')
+  // Ensure the window is focused so keyboard events are delivered. On
+  // Electron/Playwright the first keypress is sometimes dropped if the
+  // window just came up — clicking the body guarantees focus lands.
+  await page.locator('body').click()
 
   return {
     app,

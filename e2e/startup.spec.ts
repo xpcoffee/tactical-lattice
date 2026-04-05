@@ -8,29 +8,20 @@ const PHASER_MS_LIMIT = 1_200
 const TOTAL_MS_LIMIT  = 1_200
 
 test('startup timings are within acceptable bounds', async () => {
-  // Attach the console listener before Phaser initialises so we don't miss it.
   const game = await launchGame()
 
-  const timingLine = await new Promise<string>((resolve, reject) => {
-    const timer = setTimeout(
-      () => reject(new Error('Timed out waiting for [startup] console log')),
-      12_000,
-    )
-    game.page.on('console', (msg) => {
-      if (msg.text().startsWith('[startup]')) {
-        clearTimeout(timer)
-        resolve(msg.text())
-      }
-    })
-  })
+  // Poll window.__startupTimings — main.tsx records it when scene-ready fires.
+  // Reading from window instead of from console.log avoids races with
+  // listener attachment.
+  const timings = await game.page.waitForFunction(
+    () => (window as unknown as { __startupTimings?: { react: number; phaser: number; total: number } }).__startupTimings,
+    null,
+    { timeout: 12_000 },
+  ).then(h => h.jsonValue())
 
-  // Format: "[startup] react: 42 ms | phaser: 1234 ms | total: 1276 ms"
-  const parse = (key: string) =>
-    parseInt(timingLine.match(new RegExp(`${key}:\\s*(\\d+)`))?.[1] ?? '-1')
-
-  const reactMs  = parse('react')
-  const phaserMs = parse('phaser')
-  const totalMs  = parse('total')
+  const reactMs  = Math.round(timings.react)
+  const phaserMs = Math.round(timings.phaser)
+  const totalMs  = Math.round(timings.total)
 
   // Echo to stdout so the timing appears in CI logs and build output.
   console.log(`[startup-timings] react=${reactMs}ms phaser=${phaserMs}ms total=${totalMs}ms`)
