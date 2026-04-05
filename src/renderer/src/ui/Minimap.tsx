@@ -149,22 +149,36 @@ export default function Minimap({ mode, onMoveConfirm }: MinimapProps) {
             )
           })}
 
-          {/* Entity markers */}
-          {entities.map(e => {
-            const { x, y } = hexSVGPos(e.position)
-            return (
-              <text
-                key={e.id}
-                x={x}
-                y={y}
-                textAnchor="middle"
-                dominantBaseline="central"
-                fontSize="8"
-                fill="#cc4444"
-                style={{ pointerEvents: 'none' }}
-              >X</text>
-            )
-          })}
+          {/* Entity markers — staggered when multiple share a hex */}
+          {(() => {
+            // Bucket entities by hex so we can offset stacked markers.
+            const buckets = new Map<string, typeof entities>()
+            for (const e of entities) {
+              const k = `${e.position.q},${e.position.r}`
+              const arr = buckets.get(k)
+              if (arr) arr.push(e)
+              else buckets.set(k, [e])
+            }
+            for (const arr of buckets.values()) arr.sort((a, b) => a.id - b.id)
+            return entities.map(e => {
+              const { x, y } = hexSVGPos(e.position)
+              const bucket = buckets.get(`${e.position.q},${e.position.r}`)!
+              const idx = bucket.indexOf(e)
+              const offset = idx - (bucket.length - 1) / 2
+              return (
+                <text
+                  key={e.id}
+                  x={x + offset * 3}
+                  y={y + offset * 2}
+                  textAnchor="middle"
+                  dominantBaseline="central"
+                  fontSize="8"
+                  fill="#cc4444"
+                  style={{ pointerEvents: 'none' }}
+                >X</text>
+              )
+            })
+          })()}
         </g>
 
         {/* Player dot — always at centre, outside the rotating group */}

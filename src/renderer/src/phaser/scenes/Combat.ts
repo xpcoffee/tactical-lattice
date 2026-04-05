@@ -24,6 +24,16 @@ const ROTATE_DURATION      = 220   // ms — camera rotates to new facing
 const ENTITY_FADE_DURATION = 350   // ms — entities fade when entering/leaving range
 const HEX_FADE_SPEED       = 1 / 0.30  // alpha units/sec — hex outlines fade in 300 ms
 
+// When multiple entities share a hex, they're drawn staggered around the centre.
+const STACK_DX = 10
+const STACK_DY =  6
+
+// Companion strip: entities standing on the player's hex are drawn in a
+// fixed screen-space row to the right of the mech, "in the sky".
+const COMPANION_STRIP_Y_RATIO     = 0.28   // above horizon (0.40)
+const COMPANION_STRIP_RIGHT_RATIO = 0.48   // rightmost sprite position
+const COMPANION_STRIP_STEP        = 44     // px between sprites (right → left)
+
 // ─── Hex animation tracking ───────────────────────────────────────────────────
 
 interface HexAnim {
@@ -68,6 +78,8 @@ export class Combat extends Phaser.Scene {
   private entityRenders  = new Map<number, EntityRender>()
   private leavingEntities = new Set<number>()
   private prevVisibility  = new Map<number, 'visible' | 'sensor'>()
+  // Updated on every visibility sync / redraw — stack index within each hex bucket.
+  private entityStackInfo = new Map<number, { index: number; groupSize: number; onPlayerHex: boolean }>()
 
   constructor() { super('Combat') }
 
@@ -285,16 +297,63 @@ export class Combat extends Phaser.Scene {
 
   // ── Entity rendering ────────────────────────────────────────────────────────
 
+  /** Recomputes per-entity stack info (bucket index, size, whether on player hex). */
+  private updateEntityStackInfo(entities: VisibleEntity[]): void {
+    this.entityStackInfo.clear()
+    const player = this.state.playerPosition
+    const playerKey = hexKey(player)
+
+    const buckets = new Map<string, VisibleEntity[]>()
+    for (const e of entities) {
+      if (!e.isVisible && !e.isSensor) continue
+      const k = hexKey(e.position)
+      const arr = buckets.get(k)
+      if (arr) arr.push(e)
+      else buckets.set(k, [e])
+    }
+
+    for (const [k, bucket] of buckets) {
+      bucket.sort((a, b) => a.id - b.id)  // stable order → no jitter
+      const onPlayerHex = k === playerKey
+      const groupSize = bucket.length
+      bucket.forEach((e, index) => {
+        this.entityStackInfo.set(e.id, { index, groupSize, onPlayerHex })
+      })
+    }
+  }
+
+  /** Returns final screen coords for a visible/sensor entity, or null if off-screen. */
+  private entityScreenPos(entity: VisibleEntity): { x: number; y: number } | null {
+    const info = this.entityStackInfo.get(entity.id)
+    if (!info) return null
+
+    if (info.onPlayerHex) {
+      // Companion strip: screen-space row, right-anchored, newer IDs on right.
+      const rightX = this.scale.width * COMPANION_STRIP_RIGHT_RATIO
+      const y      = this.scale.height * COMPANION_STRIP_Y_RATIO
+      // Reverse index so the highest-id entity sits at the rightmost position.
+      const revIdx = (info.groupSize - 1) - info.index
+      return { x: rightX - revIdx * COMPANION_STRIP_STEP, y }
+    }
+
+    // Ground rendering: project the hex centre, then apply stagger offset.
+    const player = this.state.playerPosition
+    const rel = { q: entity.position.q - player.q, r: entity.position.r - player.r }
+    const base = this.hexToScreen(rel)
+    if (!base) return null
+    const offset = info.index - (info.groupSize - 1) / 2
+    return { x: base.x + offset * STACK_DX, y: base.y + offset * STACK_DY }
+  }
+
   private redrawEntityPositions(): void {
-    const player   = this.state.playerPosition
     const entities = getVisibleEntities(this.state, VIEW_RANGE, SENSOR_RANGE, GRID_COLS, GRID_ROWS)
+    this.updateEntityStackInfo(entities)
 
     for (const entity of entities) {
       const render = this.entityRenders.get(entity.id)
       if (!render || this.leavingEntities.has(entity.id)) continue
 
-      const rel = { q: entity.position.q - player.q, r: entity.position.r - player.r }
-      const pos = this.hexToScreen(rel)
+      const pos = this.entityScreenPos(entity)
       if (!pos) { render.gfx.setVisible(false); render.label?.setVisible(false); continue }
 
       render.gfx.setVisible(true)
@@ -305,8 +364,8 @@ export class Combat extends Phaser.Scene {
   }
 
   private syncEntityVisibility(): void {
-    const player   = this.state.playerPosition
     const entities = getVisibleEntities(this.state, VIEW_RANGE, SENSOR_RANGE, GRID_COLS, GRID_ROWS)
+    this.updateEntityStackInfo(entities)
 
     const newVis = new Map<number, 'visible' | 'sensor'>()
     for (const e of entities) {
@@ -318,8 +377,7 @@ export class Combat extends Phaser.Scene {
       if (!entity.isVisible && !entity.isSensor) continue
       const newV = newVis.get(entity.id)!
       const oldV = this.prevVisibility.get(entity.id)
-      const rel  = { q: entity.position.q - player.q, r: entity.position.r - player.r }
-      const pos  = this.hexToScreen(rel)
+      const pos  = this.entityScreenPos(entity)
       if (!pos) continue
 
       if (!oldV) {
