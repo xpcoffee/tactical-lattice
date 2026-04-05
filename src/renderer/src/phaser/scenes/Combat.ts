@@ -57,9 +57,15 @@ function hexKey(h: HexCoord): string {
 interface EntityRender {
   gfx: Phaser.GameObjects.Graphics; // fallback / sensor / objective render
   sprite?: Phaser.GameObjects.Image; // used for visible mech entities
-  label?: Phaser.GameObjects.Text;
+  label?: Phaser.GameObjects.Text;  // sensor-range single-letter marker
+  targetBox?: Phaser.GameObjects.Graphics; // targeting reticle around visible mechs
+  nameLabel?: Phaser.GameObjects.Text;     // "UNIT-02" tag
+  distLabel?: Phaser.GameObjects.Text;     // distance readout in KM
   visibility: "visible" | "sensor";
 }
+
+const HEX_KM_PER_STEP = 1.5;   // each hex spans 1.5 km — displayed on distance tag
+const SPRITE_LIFT_RATIO = 0.10;  // lift sprite this fraction of its height off the grid
 
 // Enemy mech sprite size as a ratio of the player mech's rendered width,
 // indexed by hex distance to the player (0 = same hex, up to VIEW_RANGE=3).
@@ -110,7 +116,7 @@ export class Combat extends Phaser.Scene {
   // Works uniformly for ground→ground, ground→strip, and strip→ground.
   private entityScreenTweens = new Map<
     number,
-    { fromX: number; fromY: number; fromScale: number; alpha: number }
+    { fromX: number; fromY: number; fromScale: number; fromDistance: number; alpha: number }
   >();
 
   constructor() {
@@ -161,13 +167,13 @@ export class Combat extends Phaser.Scene {
       this.updateEntityStackInfo(visibleEntitiesOld);
       const oldScreenByEntity = new Map<
         number,
-        { x: number; y: number; scale: number }
+        { x: number; y: number; scale: number; distance: number }
       >();
       for (const e of visibleEntitiesOld) {
         if (!e.isVisible && !e.isSensor) continue;
         const p = this.entityScreenPos(e);
         const scale = this.entityMechScale(e);
-        if (p) oldScreenByEntity.set(e.id, { x: p.x, y: p.y, scale });
+        if (p) oldScreenByEntity.set(e.id, { x: p.x, y: p.y, scale, distance: e.distance });
       }
 
       this.state = newState;
@@ -292,7 +298,7 @@ export class Combat extends Phaser.Scene {
   }
 
   private scheduleEntityGlides(
-    oldScreenByEntity: Map<number, { x: number; y: number; scale: number }>,
+    oldScreenByEntity: Map<number, { x: number; y: number; scale: number; distance: number }>,
   ): void {
     // Refresh stack info with NEW state so entityScreenPos targets are correct.
     const visibleNew = getVisibleEntities(
@@ -320,6 +326,7 @@ export class Combat extends Phaser.Scene {
         fromX: from.x,
         fromY: from.y,
         fromScale: from.scale,
+        fromDistance: from.distance,
         alpha: 0,
       };
       this.entityScreenTweens.set(e.id, glide);
@@ -661,6 +668,9 @@ export class Combat extends Phaser.Scene {
               render.gfx.destroy();
               render.sprite?.destroy();
               render.label?.destroy();
+              render.targetBox?.destroy();
+              render.nameLabel?.destroy();
+              render.distLabel?.destroy();
               this.entityRenders.delete(id);
               this.leavingEntities.delete(id);
             },
@@ -695,12 +705,29 @@ export class Combat extends Phaser.Scene {
       const scale = glide
         ? glide.fromScale + (targetScale - glide.fromScale) * glide.alpha
         : targetScale;
-      render.sprite.setPosition(pos.x, pos.y);
+      // Lift sprite off the grid by a fraction of its own rendered height.
+      const spriteHeight = scale * MECH_SPRITE_NATIVE;
+      const liftPx = spriteHeight * SPRITE_LIFT_RATIO;
+      const spriteY = pos.y - liftPx;
+      render.sprite.setPosition(pos.x, spriteY);
       render.sprite.setScale(scale);
       render.sprite.setVisible(true);
       render.gfx.clear();
+
+      // Targeting box + name tag + distance — only on ground hexes.
+      const onPlayerHex = this.entityStackInfo.get(entity.id)?.onPlayerHex ?? false;
+      if (!onPlayerHex) {
+        this.paintTargetBox(render, entity, pos.x, spriteY, scale, glide);
+      } else {
+        render.targetBox?.setVisible(false);
+        render.nameLabel?.setVisible(false);
+        render.distLabel?.setVisible(false);
+      }
     } else {
       if (render.sprite) render.sprite.setVisible(false);
+      render.targetBox?.setVisible(false);
+      render.nameLabel?.setVisible(false);
+      render.distLabel?.setVisible(false);
       render.gfx.clear();
       if (visibility === "visible") {
         const s = (1.0 - entity.distance / (VIEW_RANGE + 1)) * 40;
@@ -711,6 +738,70 @@ export class Combat extends Phaser.Scene {
         render.gfx.strokeRect(pos.x - 14, pos.y - 10, 28, 20);
       }
     }
+  }
+
+  // Draws a gold targeting reticle around the sprite plus UNIT-XX name tag
+  // and a distance readout (1 decimal km, 1.5 km per hex), both hovering at
+  // the box's top-right. Interpolates distance during active glides.
+  private paintTargetBox(
+    render: EntityRender,
+    entity: VisibleEntity,
+    spriteX: number,
+    spriteBottomY: number,
+    scale: number,
+    glide: { fromDistance: number; alpha: number } | undefined,
+  ): void {
+    const w = scale * MECH_SPRITE_NATIVE;
+    const h = scale * MECH_SPRITE_NATIVE;
+    const pad = Math.max(3, w * 0.05);
+    const bx = spriteX - w / 2 - pad;
+    const by = spriteBottomY - h - pad;
+    const bw = w + pad * 2;
+    const bh = h + pad * 2;
+
+    const alphaVal = render.sprite!.alpha;
+    if (!render.targetBox) {
+      render.targetBox = this.add.graphics().setAlpha(alphaVal);
+    }
+    render.targetBox.clear();
+    render.targetBox.lineStyle(1, 0xe6c200, 0.8);
+    render.targetBox.strokeRect(bx, by, bw, bh);
+    render.targetBox.setVisible(true);
+
+    const displayedDist = glide
+      ? glide.fromDistance + (entity.distance - glide.fromDistance) * glide.alpha
+      : entity.distance;
+    const kmText = `${(displayedDist * HEX_KM_PER_STEP).toFixed(1)} KM`;
+    const nameText = `UNIT-${String(entity.id).padStart(2, "0")}`;
+    const tagX = bx + bw + 4;
+
+    if (!render.nameLabel) {
+      render.nameLabel = this.add
+        .text(0, 0, "", {
+          fontSize: "9px",
+          color: "#e6c200",
+          fontFamily: "monospace",
+        })
+        .setOrigin(0, 0)
+        .setAlpha(alphaVal);
+    }
+    render.nameLabel.setText(nameText);
+    render.nameLabel.setPosition(tagX, by);
+    render.nameLabel.setVisible(true);
+
+    if (!render.distLabel) {
+      render.distLabel = this.add
+        .text(0, 0, "", {
+          fontSize: "8px",
+          color: "#b8b8b8",
+          fontFamily: "monospace",
+        })
+        .setOrigin(0, 0)
+        .setAlpha(alphaVal);
+    }
+    render.distLabel.setText(kmText);
+    render.distLabel.setPosition(tagX, by + 11);
+    render.distLabel.setVisible(true);
   }
 
   // All display objects belonging to an entity render — for coordinated tweens.
@@ -728,6 +819,9 @@ export class Combat extends Phaser.Scene {
     > = [render.gfx];
     if (render.sprite) t.push(render.sprite);
     if (render.label) t.push(render.label);
+    if (render.targetBox) t.push(render.targetBox);
+    if (render.nameLabel) t.push(render.nameLabel);
+    if (render.distLabel) t.push(render.distLabel);
     return t;
   }
 }
