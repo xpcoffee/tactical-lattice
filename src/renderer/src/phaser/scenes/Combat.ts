@@ -66,7 +66,7 @@ interface EntityRender {
 // The player sprite is 320 px (Mech.tsx); the enemy bitmap is 80 px native.
 const PLAYER_MECH_PX = 320;
 const MECH_SPRITE_NATIVE = 80;
-const MECH_RATIO_BY_DIST = [0.9, 0.2, 0.1, 0.05];
+const MECH_RATIO_BY_DIST = [0.9, 0.1, 0.05, 0.025];
 const MECH_SCALE_BY_DIST = MECH_RATIO_BY_DIST.map(
   (r) => (PLAYER_MECH_PX * r) / MECH_SPRITE_NATIVE,
 );
@@ -152,7 +152,11 @@ export class Combat extends Phaser.Scene {
       // BEFORE the state swap, then after the swap we know where each entity
       // was drawn — the starting point for the new screen-space glide tween.
       const visibleEntitiesOld = getVisibleEntities(
-        this.state, VIEW_RANGE, SENSOR_RANGE, GRID_COLS, GRID_ROWS,
+        this.state,
+        VIEW_RANGE,
+        SENSOR_RANGE,
+        GRID_COLS,
+        GRID_ROWS,
       );
       this.updateEntityStackInfo(visibleEntitiesOld);
       const oldScreenByEntity = new Map<
@@ -288,14 +292,15 @@ export class Combat extends Phaser.Scene {
   }
 
   private scheduleEntityGlides(
-    oldScreenByEntity: Map<
-      number,
-      { x: number; y: number; scale: number }
-    >,
+    oldScreenByEntity: Map<number, { x: number; y: number; scale: number }>,
   ): void {
     // Refresh stack info with NEW state so entityScreenPos targets are correct.
     const visibleNew = getVisibleEntities(
-      this.state, VIEW_RANGE, SENSOR_RANGE, GRID_COLS, GRID_ROWS,
+      this.state,
+      VIEW_RANGE,
+      SENSOR_RANGE,
+      GRID_COLS,
+      GRID_ROWS,
     );
     this.updateEntityStackInfo(visibleNew);
 
@@ -306,11 +311,17 @@ export class Combat extends Phaser.Scene {
       const target = this.entityScreenPos(e);
       if (!target) continue;
       // Skip when the position is essentially unchanged (stationary entity).
-      if (Math.abs(from.x - target.x) < 1 && Math.abs(from.y - target.y) < 1) continue;
+      if (Math.abs(from.x - target.x) < 1 && Math.abs(from.y - target.y) < 1)
+        continue;
       // Kill any in-flight glide so overlapping moves behave cleanly.
       const existing = this.entityScreenTweens.get(e.id);
       if (existing) this.tweens.killTweensOf(existing);
-      const glide = { fromX: from.x, fromY: from.y, fromScale: from.scale, alpha: 0 };
+      const glide = {
+        fromX: from.x,
+        fromY: from.y,
+        fromScale: from.scale,
+        alpha: 0,
+      };
       this.entityScreenTweens.set(e.id, glide);
       this.tweens.add({
         targets: glide,
