@@ -20,9 +20,10 @@ import { GRID_COLS, GRID_ROWS, VIEW_RANGE, SENSOR_RANGE } from '../../game/const
 //   scale = PERSP_CAM_D / (PERSP_CAM_D + forward_depth)
 // Smaller values = more extreme perspective (faster convergence).
 const PERSP_CAM_D     = 80    // perspective depth parameter
-const HEX_WORLD_SIZE  = 160   // world-space hex size (controls physical spacing)
+const HEX_WORLD_SIZE  = 240   // world-space hex size (controls physical spacing)
+const HORIZON_X_RATIO = 0.60  // vanishing point x: centre of battlefield panel
 const HORIZON_Y_RATIO = 0.40  // horizon line: 40% from top of canvas
-const ANCHOR_X_RATIO  = 0.40  // mech foot x: slightly left of centre
+const ANCHOR_X_RATIO  = 0.54  // mech foot x: slightly left of horizon centre
 const ANCHOR_Y_RATIO  = 0.78  // mech foot y: near bottom
 
 export class Combat extends Phaser.Scene {
@@ -44,7 +45,7 @@ export class Combat extends Phaser.Scene {
       x: this.scale.width  * ANCHOR_X_RATIO,
       y: this.scale.height * ANCHOR_Y_RATIO,
     }
-    this.horizonX = this.scale.width  * 0.5
+    this.horizonX = this.scale.width  * HORIZON_X_RATIO
     this.horizonY = this.scale.height * HORIZON_Y_RATIO
 
     this.gridGfx      = this.add.graphics()
