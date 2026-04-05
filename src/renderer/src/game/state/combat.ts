@@ -119,6 +119,22 @@ export function moveInDirection(
 }
 
 /**
+ * Steps the mech one hex in `direction` (0–5) without changing facing. Costs
+ * 1 tick. Returns unchanged state if blocked by boundary. Pure.
+ */
+export function strafeInDirection(
+  state: CombatState,
+  direction: number,
+  cols: number,
+  rows: number,
+): CombatState {
+  const target = hexInDirection(state.playerPosition, direction)
+  if (!isInBounds(target, cols, rows)) return state
+  const advanced = advanceWorld(state, 1)
+  return { ...advanced, playerPosition: target }
+}
+
+/**
  * Advances the world by `ticks`: queues AI decisions for entities that lack a
  * pending action (locking in the player's position *at decision time*), then
  * advances all pending actions and applies any that complete.

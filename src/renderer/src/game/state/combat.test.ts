@@ -6,6 +6,7 @@ import {
   movePlayer,
   rotateFacing,
   moveInDirection,
+  strafeInDirection,
   getVisibleEntities,
   Entity,
   CombatState,
@@ -228,6 +229,38 @@ describe('moveInDirection', () => {
   it('preserves facing in returned state', () => {
     const state: CombatState = { ...base, facing: 2 }
     expect(moveInDirection(state, true, COLS, ROWS).facing).toBe(2)
+  })
+})
+
+describe('strafeInDirection', () => {
+  const COLS = 15, ROWS = 15
+  const base: CombatState = { playerPosition: { q: 7, r: 7 }, facing: 0, entities: [], pendingActions: [] }
+
+  it('steps in the requested direction without changing facing', () => {
+    // Direction 1 = NE → q+1, r-1
+    const result = strafeInDirection(base, 1, COLS, ROWS)
+    expect(result.playerPosition).toEqual({ q: 8, r: 6 })
+    expect(result.facing).toBe(0)
+  })
+
+  it('costs 1 tick', () => {
+    const action = queueAction({ unitId: 1, type: 'fire-heavy' })
+    const s: CombatState = { ...base, pendingActions: [{ ...action, ticksRemaining: 2 }] }
+    const result = strafeInDirection(s, 2, COLS, ROWS)
+    expect(result.pendingActions[0].ticksRemaining).toBe(1)
+  })
+
+  it('blocked at boundary returns unchanged state', () => {
+    const edge: CombatState = { ...base, playerPosition: { q: 0, r: 0 } }
+    // Direction 3 = W → q-1
+    const result = strafeInDirection(edge, 3, COLS, ROWS)
+    expect(result).toBe(edge)
+  })
+
+  it('accepts all 6 directions', () => {
+    for (let d = 0; d < 6; d++) {
+      expect(() => strafeInDirection(base, d, COLS, ROWS)).not.toThrow()
+    }
   })
 })
 

@@ -78,6 +78,40 @@ test('ArrowLeft / ArrowRight also rotate facing', async () => {
   await game.close()
 })
 
+test('Shift/Ctrl+H/L strafes without changing facing', async () => {
+  const game = await launchGame()
+  await expect(game.page.locator('.panel-battlefield')).toBeVisible()
+  await game.page.waitForTimeout(300)
+
+  const readState = () => game.page.evaluate(() => {
+    const log = (window as unknown as { __actionLog?: () => Array<{ action: string; facing: number; playerPosition: { q: number; r: number } }> }).__actionLog?.() ?? []
+    return log[log.length - 1]
+  })
+
+  // Player starts at (7,4) facing 0 (E).
+  // Shift+L (strafe L-forward) → direction (0+5)%6 = 5 (SE). Target (7,5).
+  await game.page.keyboard.down('Shift')
+  await game.page.keyboard.press('l')
+  await game.page.keyboard.up('Shift')
+  await game.page.waitForTimeout(400)
+  let last = await readState()
+  expect(last.action).toBe('strafe:l-fwd')
+  expect(last.facing).toBe(0)
+  expect(last.playerPosition).toEqual({ q: 7, r: 5 })
+
+  // Ctrl+H (strafe H-back) → direction (0+4)%6 = 4 (SW). From (7,5): q-1,r+1 = (6,6).
+  await game.page.keyboard.down('Control')
+  await game.page.keyboard.press('h')
+  await game.page.keyboard.up('Control')
+  await game.page.waitForTimeout(400)
+  last = await readState()
+  expect(last.action).toBe('strafe:h-back')
+  expect(last.facing).toBe(0)
+  expect(last.playerPosition).toEqual({ q: 6, r: 6 })
+
+  await game.close()
+})
+
 test('boundary: cannot move back past grid edge', async () => {
   const game = await launchGame()
   await game.page.waitForTimeout(500)
