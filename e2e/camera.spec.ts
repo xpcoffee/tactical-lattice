@@ -99,7 +99,7 @@ test('Shift/Ctrl+H/L strafes without changing facing', async () => {
   expect(last.facing).toBe(0)
   expect(last.playerPosition).toEqual({ q: 7, r: 5 })
 
-  // Ctrl+H (strafe H-back) → direction (0+4)%6 = 4 (SW). From (7,5): q-1,r+1 = (6,6).
+  // Ctrl+H (strafe H-back) → direction (0+2)%6 = 2 (q+0, r-1). From (7,5) → (7,4).
   await game.page.keyboard.down('Control')
   await game.page.keyboard.press('h')
   await game.page.keyboard.up('Control')
@@ -107,7 +107,7 @@ test('Shift/Ctrl+H/L strafes without changing facing', async () => {
   last = await readState()
   expect(last.action).toBe('strafe:h-back')
   expect(last.facing).toBe(0)
-  expect(last.playerPosition).toEqual({ q: 6, r: 6 })
+  expect(last.playerPosition).toEqual({ q: 7, r: 4 })
 
   await game.close()
 })

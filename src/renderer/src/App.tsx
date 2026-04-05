@@ -29,12 +29,12 @@ export default function App() {
       const isL = k === 'l' || e.key === 'ArrowRight'
       // Strafe: maintain facing, step one hex adjacent to the facing direction.
       //   Shift+H → CCW neighbour  (facing+1),  Shift+L → CW neighbour  (facing+5)
-      //   Ctrl+H  → opposite of H  (facing+4),  Ctrl+L  → opposite of L (facing+2)
+      //   Ctrl+H  →  (facing+2),               Ctrl+L  →  (facing+4)
       const strafeDir =
         (isH || isL) && (e.shiftKey || e.ctrlKey)
           ? ((state.facing + (isH
-              ? (e.ctrlKey ? 4 : 1)
-              : (e.ctrlKey ? 2 : 5))) % 6)
+              ? (e.ctrlKey ? 2 : 1)
+              : (e.ctrlKey ? 4 : 5))) % 6)
           : -1
 
       let action = ''
