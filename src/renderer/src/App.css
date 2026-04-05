@@ -29,13 +29,13 @@
   inset: 0;
 }
 
-/* Mech sprite: anchored by feet at the Phaser player anchor (54vw, 78vh).
-   Matches ANCHOR_X_RATIO = 0.54 and ANCHOR_Y_RATIO = 0.78 in Combat.ts. */
+/* Mech sprite: anchored by feet at the Phaser player anchor (20vw, 88vh).
+   Matches ANCHOR_X_RATIO = 0.20 and ANCHOR_Y_RATIO = 0.88 in Combat.ts. */
 .panel-mech-status {
   z-index: 10;
   position: absolute;
-  left: 54vw;
-  top: 78vh;
+  left: 20vw;
+  top: 88vh;
   transform: translate(-50%, -100%);
   width: 320px;
   pointer-events: none;

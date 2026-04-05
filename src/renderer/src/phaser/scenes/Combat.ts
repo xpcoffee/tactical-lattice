@@ -21,10 +21,10 @@ import { GRID_COLS, GRID_ROWS, VIEW_RANGE, SENSOR_RANGE } from '../../game/const
 // Smaller values = more extreme perspective (faster convergence).
 const PERSP_CAM_D     = 80    // perspective depth parameter
 const HEX_WORLD_SIZE  = 240   // world-space hex size (controls physical spacing)
-const HORIZON_X_RATIO = 0.60  // vanishing point x: centre of battlefield panel
+const HORIZON_X_RATIO = 0.50  // vanishing point x: screen centre
 const HORIZON_Y_RATIO = 0.40  // horizon line: 40% from top of canvas
-const ANCHOR_X_RATIO  = 0.54  // mech foot x: slightly left of horizon centre
-const ANCHOR_Y_RATIO  = 0.78  // mech foot y: near bottom
+const ANCHOR_X_RATIO  = 0.20  // mech foot x: far left for over-the-shoulder view
+const ANCHOR_Y_RATIO  = 0.88  // mech foot y: close to action bar
 
 export class Combat extends Phaser.Scene {
   private state!: CombatState
