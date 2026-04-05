@@ -28,23 +28,24 @@ test('rotate facing CCW with H key', async () => {
   await game.close()
 })
 
+async function readMarkerPos(page: import('@playwright/test').Page): Promise<string> {
+  // Concatenate all entity marker positions — detects any shift.
+  return await page.evaluate(() => {
+    const els = document.querySelectorAll('svg g text')
+    return Array.from(els).map(el => `${el.getAttribute('x')},${el.getAttribute('y')}`).join('|')
+  })
+}
+
 test('move forward with K key — entities reposition on minimap', async () => {
   const game = await launchGame()
   await game.page.waitForTimeout(500)
 
-  // Entity markers sit inside the rotating group and are positioned relative
-  // to the player hex. Their x-attribute shifts when the player moves.
-  const entityMarker = game.page.locator('svg g text').first()
-  const beforeX = await entityMarker.getAttribute('x')
-
-  // Press K — move forward. Facing=0 (E) → +q. In SVG pre-rotation that shifts
-  // entity x-coords negatively (player advanced toward them).
+  const before = await readMarkerPos(game.page)
   await game.page.keyboard.press('k')
   await game.page.waitForTimeout(400)
+  const after = await readMarkerPos(game.page)
 
-  const afterX = await entityMarker.getAttribute('x')
-  expect(afterX).not.toBe(beforeX)
-
+  expect(after).not.toBe(before)
   await game.screenshot('camera-forward-move')
   await game.close()
 })
@@ -53,15 +54,12 @@ test('move backward with J key — entities reposition on minimap', async () => 
   const game = await launchGame()
   await game.page.waitForTimeout(500)
 
-  const entityMarker = game.page.locator('svg g text').first()
-  const beforeX = await entityMarker.getAttribute('x')
-
+  const before = await readMarkerPos(game.page)
   await game.page.keyboard.press('j')
   await game.page.waitForTimeout(400)
+  const after = await readMarkerPos(game.page)
 
-  const afterX = await entityMarker.getAttribute('x')
-  expect(afterX).not.toBe(beforeX)
-
+  expect(after).not.toBe(before)
   await game.screenshot('camera-backward-move')
   await game.close()
 })
