@@ -31,7 +31,6 @@ export class Combat extends Phaser.Scene {
   private gridGfx!: Phaser.GameObjects.Graphics
   private entityGfx!: Map<number, Phaser.GameObjects.Graphics>
   private entityLabels!: Map<number, Phaser.GameObjects.Text>
-  private mechGfx!: Phaser.GameObjects.Graphics
   private playerAnchor!: { x: number; y: number }
   private horizonX!: number
   private horizonY!: number
@@ -49,7 +48,6 @@ export class Combat extends Phaser.Scene {
     this.horizonY = this.scale.height * HORIZON_Y_RATIO
 
     this.gridGfx      = this.add.graphics()
-    this.mechGfx      = this.add.graphics()
     this.entityGfx    = new Map()
     this.entityLabels = new Map()
 
@@ -128,13 +126,6 @@ export class Combat extends Phaser.Scene {
     }
   }
 
-  private drawMechSprite(): void {
-    this.mechGfx.clear()
-    const { x, y } = this.playerAnchor
-    this.mechGfx.fillStyle(0xe6c200, 0.9)
-    this.mechGfx.fillTriangle(x, y - 24, x - 10, y, x + 10, y)
-  }
-
   private renderEntities(): void {
     const entities = getVisibleEntities(this.state, VIEW_RANGE, SENSOR_RANGE, GRID_COLS, GRID_ROWS)
     const player = this.state.playerPosition
@@ -167,7 +158,6 @@ export class Combat extends Phaser.Scene {
   private drawScene(): void {
     this.drawHexGrid()
     this.renderEntities()
-    this.drawMechSprite()
   }
 
   private updateScene(): void {
