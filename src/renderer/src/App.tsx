@@ -2,6 +2,7 @@ import { useRef, useState, useEffect, useCallback } from 'react'
 import PhaserGame, { type IRefPhaserGame } from './phaser/PhaserGame'
 import { EventBus } from './phaser/EventBus'
 import { movePlayer, rotateFacing, moveInDirection, getLatestState, setLatestState, COMBAT_STATE_CHANGED } from './game/state/combat'
+import { logAction } from './game/state/actionLog'
 import { type HexCoord } from './game/hex/grid'
 import { GRID_COLS, GRID_ROWS } from './game/constants'
 import Mech from './ui/Mech'
@@ -21,15 +22,17 @@ export default function App() {
       const state = getLatestState()
       let newState = state
 
-      if      (e.key === 'h' || e.key === 'H' || e.key === 'ArrowLeft')  newState = rotateFacing(state, 'ccw')
-      else if (e.key === 'l' || e.key === 'L' || e.key === 'ArrowRight') newState = rotateFacing(state, 'cw')
-      else if (e.key === 'k' || e.key === 'K' || e.key === 'ArrowUp')    newState = moveInDirection(state, true, GRID_COLS, GRID_ROWS)
-      else if (e.key === 'j' || e.key === 'J' || e.key === 'ArrowDown')  newState = moveInDirection(state, false, GRID_COLS, GRID_ROWS)
+      let action = ''
+      if      (e.key === 'h' || e.key === 'H' || e.key === 'ArrowLeft')  { newState = rotateFacing(state, 'ccw');                            action = 'rotate:ccw' }
+      else if (e.key === 'l' || e.key === 'L' || e.key === 'ArrowRight') { newState = rotateFacing(state, 'cw');                             action = 'rotate:cw' }
+      else if (e.key === 'k' || e.key === 'K' || e.key === 'ArrowUp')    { newState = moveInDirection(state, true, GRID_COLS, GRID_ROWS);   action = 'move:forward' }
+      else if (e.key === 'j' || e.key === 'J' || e.key === 'ArrowDown')  { newState = moveInDirection(state, false, GRID_COLS, GRID_ROWS);  action = 'move:backward' }
       else return
 
       e.preventDefault()
       if (newState !== state) {
         setLatestState(newState)
+        logAction(action, newState)
         EventBus.emit(COMBAT_STATE_CHANGED, newState)
       }
     }
@@ -40,6 +43,7 @@ export default function App() {
   const handleMoveConfirm = useCallback((target: HexCoord) => {
     const newState = movePlayer(getLatestState(), target)
     setLatestState(newState)
+    logAction(`move-select:${target.q},${target.r}`, newState)
     EventBus.emit(COMBAT_STATE_CHANGED, newState)
     setMode('idle')
   }, [])
