@@ -10,13 +10,20 @@ import {
 } from '../../game/state/combat'
 import { GRID_COLS, GRID_ROWS, VIEW_RANGE, SENSOR_RANGE } from '../../game/constants'
 
-// Isometric rendering constants
-const ISO_HEX_SIZE = 120
-const ISO_SCALE_Y  = 0.35  // flatter ground plane
-const CAMERA_OFFSET = Math.PI / 6  // 30° right of directly behind player (camera to the left)
-// Mech anchor: feet of the mech sprite in screen space (bottom-left area)
-const ANCHOR_X_RATIO = 0.35
-const ANCHOR_Y_RATIO = 0.70
+// Perspective ground-plane projection constants.
+//
+// The hex grid is treated as a flat floor. The camera sits above and behind
+// the player, looking forward. Everything converges to a vanishing point at
+// (horizonX, horizonY). The player hex always projects to playerAnchor.
+//
+// PERSP_CAM_D controls how fast hexes converge to the horizon:
+//   scale = PERSP_CAM_D / (PERSP_CAM_D + forward_depth)
+// Smaller values = more extreme perspective (faster convergence).
+const PERSP_CAM_D     = 80    // perspective depth parameter
+const HEX_WORLD_SIZE  = 160   // world-space hex size (controls physical spacing)
+const HORIZON_Y_RATIO = 0.40  // horizon line: 40% from top of canvas
+const ANCHOR_X_RATIO  = 0.40  // mech foot x: slightly left of centre
+const ANCHOR_Y_RATIO  = 0.78  // mech foot y: near bottom
 
 export class Combat extends Phaser.Scene {
   private state!: CombatState
@@ -25,6 +32,8 @@ export class Combat extends Phaser.Scene {
   private entityLabels!: Map<number, Phaser.GameObjects.Text>
   private mechGfx!: Phaser.GameObjects.Graphics
   private playerAnchor!: { x: number; y: number }
+  private horizonX!: number
+  private horizonY!: number
 
   constructor() {
     super('Combat')
@@ -35,10 +44,12 @@ export class Combat extends Phaser.Scene {
       x: this.scale.width  * ANCHOR_X_RATIO,
       y: this.scale.height * ANCHOR_Y_RATIO,
     }
+    this.horizonX = this.scale.width  * 0.5
+    this.horizonY = this.scale.height * HORIZON_Y_RATIO
 
-    this.gridGfx    = this.add.graphics()
-    this.mechGfx    = this.add.graphics()
-    this.entityGfx  = new Map()
+    this.gridGfx      = this.add.graphics()
+    this.mechGfx      = this.add.graphics()
+    this.entityGfx    = new Map()
     this.entityLabels = new Map()
 
     this.state = createInitialCombatState()
@@ -53,21 +64,36 @@ export class Combat extends Phaser.Scene {
     })
   }
 
-  // Apply world rotation + isometric y-compression to any point in pixel-world space.
-  // All hex centers AND vertices must go through this so the grid rotates as a unit.
-  private worldToScreen(wx: number, wy: number): { x: number; y: number } {
-    const angle = (this.state.facing - 2) * Math.PI / 3 + CAMERA_OFFSET
+  // Project any world-space pixel point (wx, wy) to screen coordinates.
+  //
+  // The facing rotation maps the mech's forward direction to "up" in world space
+  // (negative wy = in front of the player). The perspective formula then maps:
+  //   depth=0  (player position) → playerAnchor
+  //   depth→∞  (horizon)         → (horizonX, horizonY)
+  //
+  // Returns null for points behind the camera (eyeDepth ≤ 0).
+  private worldToScreen(wx: number, wy: number): { x: number; y: number } | null {
+    const angle = (this.state.facing - 2) * Math.PI / 3
     const cos = Math.cos(angle), sin = Math.sin(angle)
+    const rx = wx * cos - wy * sin   // lateral offset after rotation
+    const ry = wx * sin + wy * cos   // signed depth: negative = in front of player
+
+    const eyeDepth = PERSP_CAM_D - ry  // always positive for forward hexes
+    if (eyeDepth <= 0) return null
+
+    const scale = PERSP_CAM_D / eyeDepth
+
     return {
-      x: this.playerAnchor.x + wx * cos - wy * sin,
-      y: this.playerAnchor.y + (wx * sin + wy * cos) * ISO_SCALE_Y,
+      // Lateral convergence: starts at anchorX offset at depth=0, converges to horizonX
+      x: this.horizonX + (this.playerAnchor.x - this.horizonX + rx) * scale,
+      // Vertical convergence: starts at anchorY, converges to horizonY
+      y: this.horizonY + (this.playerAnchor.y - this.horizonY) * scale,
     }
   }
 
-  // Convert a hex relative to the player into isometric screen coordinates.
-  private hexToIsoScreen(relHex: { q: number; r: number }): { x: number; y: number } {
-    const { x, y } = hexToPixel(relHex, ISO_HEX_SIZE)
-    return this.worldToScreen(x, y)
+  private hexToScreen(relHex: { q: number; r: number }): { x: number; y: number } | null {
+    const p = hexToPixel(relHex, HEX_WORLD_SIZE)
+    return this.worldToScreen(p.x, p.y)
   }
 
   private drawHexGrid(): void {
@@ -75,32 +101,35 @@ export class Combat extends Phaser.Scene {
     this.gridGfx.lineStyle(1, 0x4a4a7a, 1)
 
     const player = this.state.playerPosition
-    const coneHexes = hexesInCone(player, this.state.facing, VIEW_RANGE, GRID_COLS, GRID_ROWS)
-    const hexesToDraw = [player, ...coneHexes]
+    // Only the vision cone — the player hex is the mech's feet, shown by the sprite.
+    const hexes = hexesInCone(player, this.state.facing, VIEW_RANGE, GRID_COLS, GRID_ROWS)
 
-    for (const h of hexesToDraw) {
+    for (const h of hexes) {
       const rel = { q: h.q - player.q, r: h.r - player.r }
-      const center = hexToPixel(rel, ISO_HEX_SIZE)
+      const center = hexToPixel(rel, HEX_WORLD_SIZE)
+
+      let started = false
       this.gridGfx.beginPath()
       for (let i = 0; i < 6; i++) {
         const vAngle = (Math.PI / 3) * i
-        // Each vertex in pixel-world space, then transformed to screen
-        const { x, y } = this.worldToScreen(
-          center.x + ISO_HEX_SIZE * Math.cos(vAngle),
-          center.y + ISO_HEX_SIZE * Math.sin(vAngle),
+        const pos = this.worldToScreen(
+          center.x + HEX_WORLD_SIZE * Math.cos(vAngle),
+          center.y + HEX_WORLD_SIZE * Math.sin(vAngle),
         )
-        if (i === 0) this.gridGfx.moveTo(x, y)
-        else this.gridGfx.lineTo(x, y)
+        if (!pos) continue
+        if (!started) { this.gridGfx.moveTo(pos.x, pos.y); started = true }
+        else this.gridGfx.lineTo(pos.x, pos.y)
       }
-      this.gridGfx.closePath()
-      this.gridGfx.strokePath()
+      if (started) {
+        this.gridGfx.closePath()
+        this.gridGfx.strokePath()
+      }
     }
   }
 
   private drawMechSprite(): void {
     this.mechGfx.clear()
     const { x, y } = this.playerAnchor
-    // Upright triangle: feet at (x, y), tip extends upward
     this.mechGfx.fillStyle(0xe6c200, 0.9)
     this.mechGfx.fillTriangle(x, y - 24, x - 10, y, x + 10, y)
   }
@@ -113,23 +142,21 @@ export class Combat extends Phaser.Scene {
       if (!entity.isVisible && !entity.isSensor) continue
 
       const rel = { q: entity.position.q - player.q, r: entity.position.r - player.r }
-      const { x, y } = this.hexToIsoScreen(rel)
+      const pos = this.hexToScreen(rel)
+      if (!pos) continue
 
       const g = this.add.graphics()
       this.entityGfx.set(entity.id, g)
 
       if (entity.isVisible) {
-        const scale = 1.0 - entity.distance / (VIEW_RANGE + 1)
-        const size = 40 * scale
+        const s = (1.0 - entity.distance / (VIEW_RANGE + 1)) * 40
         g.lineStyle(2, 0xe6c200, 1)
-        g.strokeRect(x - size / 2, y - size / 2, size, size)
+        g.strokeRect(pos.x - s / 2, pos.y - s / 2, s, s)
       } else {
         g.lineStyle(1, 0x4a7a4a, 1)
-        g.strokeRect(x - 14, y - 10, 28, 20)
-
-        const label = this.add.text(x, y, entity.label, {
-          fontSize: '10px',
-          color: '#4a7a4a',
+        g.strokeRect(pos.x - 14, pos.y - 10, 28, 20)
+        const label = this.add.text(pos.x, pos.y, entity.label, {
+          fontSize: '10px', color: '#4a7a4a',
         }).setOrigin(0.5)
         this.entityLabels.set(entity.id, label)
       }
