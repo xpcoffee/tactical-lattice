@@ -20,6 +20,7 @@ const ANCHOR_X_RATIO  = 0.20
 const ANCHOR_Y_RATIO  = 0.88
 
 const MOVE_DURATION        = 280   // ms — camera glides to new position
+const ROTATE_DURATION      = 220   // ms — camera rotates to new facing
 const ENTITY_FADE_DURATION = 350   // ms — entities fade when entering/leaving range
 const HEX_FADE_SPEED       = 1 / 0.30  // alpha units/sec — hex outlines fade in 300 ms
 
@@ -53,6 +54,11 @@ export class Combat extends Phaser.Scene {
   // This gives a smooth forward camera glide with no bounce.
   private animOffset = { wx: 0, wy: 0 }
   private isMoving = false
+
+  // Rotation animation — angleOffset is added to the facing rotation angle.
+  // Starts at -(delta * 60°) along shortest arc, tweens to 0.
+  private animRot   = { offset: 0 }
+  private isRotating = false
 
   // Per-hex alpha for fade-in/out of grid outlines as they enter/leave the cone.
   private hexAnims = new Map<string, HexAnim>()
@@ -123,8 +129,23 @@ export class Combat extends Phaser.Scene {
         })
         // Entities don't refresh until the glide finishes.
       } else if (turned) {
-        // Facing change — entity visibility updates immediately.
-        this.syncEntityVisibility()
+        // Shortest-arc delta in ±3 range so wrapping (0→5) rotates by 60°, not 300°.
+        let rawDelta = newState.facing - oldFacing
+        while (rawDelta >  3) rawDelta -= 6
+        while (rawDelta < -3) rawDelta += 6
+        this.animRot.offset = -rawDelta * Math.PI / 3
+        this.isRotating = true
+
+        this.tweens.add({
+          targets: this.animRot,
+          offset: 0,
+          duration: ROTATE_DURATION,
+          ease: 'Sine.easeInOut',
+          onComplete: () => {
+            this.isRotating = false
+            this.syncEntityVisibility()
+          },
+        })
       }
     })
   }
@@ -133,16 +154,16 @@ export class Combat extends Phaser.Scene {
   update(_time: number, delta: number): void {
     const dtSec = delta / 1000
     const hexStillAnimating = this.advanceHexAlphas(dtSec)
-    if (this.isMoving || hexStillAnimating) {
+    if (this.isMoving || this.isRotating || hexStillAnimating) {
       this.drawHexGrid()
-      if (this.isMoving) this.redrawEntityPositions()
+      if (this.isMoving || this.isRotating) this.redrawEntityPositions()
     }
   }
 
   // ── Perspective projection ──────────────────────────────────────────────────
 
   private worldToScreen(wx: number, wy: number): { x: number; y: number } | null {
-    const angle = (this.state.facing - 2) * Math.PI / 3
+    const angle = (this.state.facing - 2) * Math.PI / 3 + this.animRot.offset
     const cos = Math.cos(angle), sin = Math.sin(angle)
     const awx = wx + this.animOffset.wx
     const awy = wy + this.animOffset.wy
