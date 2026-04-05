@@ -41,6 +41,8 @@ const PhaserGame = forwardRef<IRefPhaserGame, Props>(function PhaserGame(
     if (ref && typeof ref === 'object') {
       ref.current = { game: gameRef.current, scene: null }
     }
+    // Expose for test/debug inspection.
+    ;(window as unknown as { __phaserGame?: Phaser.Game }).__phaserGame = gameRef.current
 
     EventBus.on('scene-ready', (scene: Phaser.Scene) => {
       if (ref && typeof ref === 'object' && ref.current) {

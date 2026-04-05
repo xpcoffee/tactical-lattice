@@ -93,6 +93,10 @@ export class Combat extends Phaser.Scene {
   // Updated on every visibility sync / redraw — stack index within each hex bucket.
   private entityStackInfo = new Map<number, { index: number; groupSize: number; onPlayerHex: boolean }>()
 
+  // Per-entity world-space offset for smooth movement between hexes. Starts at
+  // (old - new) in world pixels and tweens to (0, 0) over MOVE_DURATION.
+  private entityMoveOffsets = new Map<number, { wx: number; wy: number }>()
+
   constructor() { super('Combat') }
 
   create(): void {
@@ -121,11 +125,15 @@ export class Combat extends Phaser.Scene {
     EventBus.on(COMBAT_STATE_CHANGED, (newState: CombatState) => {
       const oldPos     = this.state.playerPosition
       const oldFacing  = this.state.facing
+      const oldEntities = this.state.entities
       this.state       = newState
 
       const moved = oldPos.q !== newState.playerPosition.q
                  || oldPos.r !== newState.playerPosition.r
       const turned = oldFacing !== newState.facing
+
+      // Queue per-entity move tweens for entities whose hex changed.
+      this.scheduleEntityMoveTweens(oldEntities, newState.entities)
 
       // Diff the cone for hex fade animations.
       this.scheduleConeTransition(oldPos, oldFacing)
@@ -177,10 +185,11 @@ export class Combat extends Phaser.Scene {
   // Runs every frame; drives hex-alpha animations and redraws during movement.
   update(_time: number, delta: number): void {
     const dtSec = delta / 1000
-    const hexStillAnimating = this.advanceHexAlphas(dtSec)
-    if (this.isMoving || this.isRotating || hexStillAnimating) {
+    const hexStillAnimating    = this.advanceHexAlphas(dtSec)
+    const entitiesStillMoving  = this.entityMoveOffsets.size > 0
+    if (this.isMoving || this.isRotating || hexStillAnimating || entitiesStillMoving) {
       this.drawHexGrid()
-      if (this.isMoving || this.isRotating) this.redrawEntityPositions()
+      if (this.isMoving || this.isRotating || entitiesStillMoving) this.redrawEntityPositions()
     }
   }
 
@@ -207,6 +216,35 @@ export class Combat extends Phaser.Scene {
   private hexToScreen(rel: { q: number; r: number }): { x: number; y: number } | null {
     const p = hexToPixel(rel, HEX_WORLD_SIZE)
     return this.worldToScreen(p.x, p.y)
+  }
+
+  // For each entity whose hex changed, start an offset tween so it glides
+  // smoothly from the old hex to the new one during the player's move tween.
+  // The offset is applied in entityScreenPos(ground path) before projection.
+  private scheduleEntityMoveTweens(
+    oldEntities: readonly { id: number; position: HexCoord }[],
+    newEntities: readonly { id: number; position: HexCoord }[],
+  ): void {
+    const oldById = new Map(oldEntities.map(e => [e.id, e.position]))
+    for (const ne of newEntities) {
+      const op = oldById.get(ne.id)
+      if (!op) continue
+      if (op.q === ne.position.q && op.r === ne.position.r) continue
+      const oldW = hexToPixel(op, HEX_WORLD_SIZE)
+      const newW = hexToPixel(ne.position, HEX_WORLD_SIZE)
+      // Kill any in-flight tween for this entity so overlapping moves work.
+      const existing = this.entityMoveOffsets.get(ne.id)
+      if (existing) this.tweens.killTweensOf(existing)
+      const offset = { wx: oldW.x - newW.x, wy: oldW.y - newW.y }
+      this.entityMoveOffsets.set(ne.id, offset)
+      this.tweens.add({
+        targets: offset,
+        wx: 0, wy: 0,
+        duration: MOVE_DURATION,
+        ease: 'Sine.easeInOut',
+        onComplete: () => this.entityMoveOffsets.delete(ne.id),
+      })
+    }
   }
 
   // ── Hex grid ────────────────────────────────────────────────────────────────
@@ -349,13 +387,19 @@ export class Combat extends Phaser.Scene {
       return { x: centreX + slot * COMPANION_STRIP_STEP, y }
     }
 
-    // Ground rendering: project the hex centre, then apply stagger offset.
+    // Ground rendering: project the hex centre + per-entity move animation,
+    // then apply stagger offset in screen space.
     const player = this.state.playerPosition
     const rel = { q: entity.position.q - player.q, r: entity.position.r - player.r }
-    const base = this.hexToScreen(rel)
+    const p = hexToPixel(rel, HEX_WORLD_SIZE)
+    const move = this.entityMoveOffsets.get(entity.id)
+    const base = this.worldToScreen(
+      p.x + (move?.wx ?? 0),
+      p.y + (move?.wy ?? 0),
+    )
     if (!base) return null
-    const offset = info.index - (info.groupSize - 1) / 2
-    return { x: base.x + offset * STACK_DX, y: base.y + offset * STACK_DY }
+    const stackOffset = info.index - (info.groupSize - 1) / 2
+    return { x: base.x + stackOffset * STACK_DX, y: base.y + stackOffset * STACK_DY }
   }
 
   private redrawEntityPositions(): void {
