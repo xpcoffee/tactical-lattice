@@ -26,7 +26,6 @@ const ANCHOR_Y_RATIO = 0.88;
 
 const MOVE_DURATION = 280; // ms — camera glides to new position
 const ROTATE_DURATION = 220; // ms — camera rotates to new facing
-const STRIP_TRANSITION_DURATION = 520; // ms — ground ↔ companion strip glide
 const ENTITY_FADE_DURATION = 350; // ms — entities fade when entering/leaving range
 const HEX_FADE_SPEED = 1 / 0.3; // alpha units/sec — hex outlines fade in 300 ms
 
@@ -111,7 +110,7 @@ export class Combat extends Phaser.Scene {
   // Works uniformly for ground→ground, ground→strip, and strip→ground.
   private entityScreenTweens = new Map<
     number,
-    { fromX: number; fromY: number; alpha: number }
+    { fromX: number; fromY: number; fromScale: number; alpha: number }
   >();
 
   constructor() {
@@ -158,13 +157,13 @@ export class Combat extends Phaser.Scene {
       this.updateEntityStackInfo(visibleEntitiesOld);
       const oldScreenByEntity = new Map<
         number,
-        { x: number; y: number; wasOnStrip: boolean }
+        { x: number; y: number; scale: number }
       >();
       for (const e of visibleEntitiesOld) {
         if (!e.isVisible && !e.isSensor) continue;
         const p = this.entityScreenPos(e);
-        const wasOnStrip = this.entityStackInfo.get(e.id)?.onPlayerHex ?? false;
-        if (p) oldScreenByEntity.set(e.id, { x: p.x, y: p.y, wasOnStrip });
+        const scale = this.entityMechScale(e);
+        if (p) oldScreenByEntity.set(e.id, { x: p.x, y: p.y, scale });
       }
 
       this.state = newState;
@@ -283,10 +282,15 @@ export class Combat extends Phaser.Scene {
   // screen position and tween a `alpha` 0→1 value. entityScreenPos lerps
   // between the captured from-point and the live target position.
   // Works uniformly across ground→ground, ground→strip, and strip→ground.
+  private entityMechScale(entity: VisibleEntity): number {
+    const idx = Math.min(entity.distance, MECH_SCALE_BY_DIST.length - 1);
+    return MECH_SCALE_BY_DIST[idx];
+  }
+
   private scheduleEntityGlides(
     oldScreenByEntity: Map<
       number,
-      { x: number; y: number; wasOnStrip: boolean }
+      { x: number; y: number; scale: number }
     >,
   ): void {
     // Refresh stack info with NEW state so entityScreenPos targets are correct.
@@ -306,16 +310,12 @@ export class Combat extends Phaser.Scene {
       // Kill any in-flight glide so overlapping moves behave cleanly.
       const existing = this.entityScreenTweens.get(e.id);
       if (existing) this.tweens.killTweensOf(existing);
-      const glide = { fromX: from.x, fromY: from.y, alpha: 0 };
+      const glide = { fromX: from.x, fromY: from.y, fromScale: from.scale, alpha: 0 };
       this.entityScreenTweens.set(e.id, glide);
-      // Ground↔strip transitions get a longer, more deliberate glide.
-      const isOnStrip = this.entityStackInfo.get(e.id)?.onPlayerHex ?? false;
-      const crossesStrip = from.wasOnStrip !== isOnStrip;
-      const duration = crossesStrip ? STRIP_TRANSITION_DURATION : MOVE_DURATION;
       this.tweens.add({
         targets: glide,
         alpha: 1,
-        duration,
+        duration: MOVE_DURATION,
         ease: "Sine.easeInOut",
         onComplete: () => this.entityScreenTweens.delete(e.id),
       });
@@ -678,9 +678,14 @@ export class Combat extends Phaser.Scene {
           .setOrigin(0.5, 1)
           .setAlpha(render.gfx.alpha);
       }
-      const idx = Math.min(entity.distance, MECH_SCALE_BY_DIST.length - 1);
+      const targetScale = this.entityMechScale(entity);
+      // Lerp scale during an active glide so ground↔strip transitions don't pop.
+      const glide = this.entityScreenTweens.get(entity.id);
+      const scale = glide
+        ? glide.fromScale + (targetScale - glide.fromScale) * glide.alpha
+        : targetScale;
       render.sprite.setPosition(pos.x, pos.y);
-      render.sprite.setScale(MECH_SCALE_BY_DIST[idx]);
+      render.sprite.setScale(scale);
       render.sprite.setVisible(true);
       render.gfx.clear();
     } else {
