@@ -29,10 +29,11 @@ const STACK_DX = 10
 const STACK_DY =  6
 
 // Companion strip: entities standing on the player's hex are drawn in a
-// fixed screen-space row to the right of the mech, "in the sky".
-const COMPANION_STRIP_Y_RATIO     = 0.28   // above horizon (0.40)
-const COMPANION_STRIP_RIGHT_RATIO = 0.48   // rightmost sprite position
-const COMPANION_STRIP_STEP        = 44     // px between sprites (right → left)
+// fixed screen-space row slightly above screen centre, spread across the
+// canvas width to the right of the mech.
+const COMPANION_STRIP_Y_RATIO     = 0.42   // just above screen centre
+const COMPANION_STRIP_RIGHT_RATIO = 0.88   // rightmost sprite position
+const COMPANION_STRIP_STEP        = 180    // px between sprite centres (right → left)
 
 // ─── Hex animation tracking ───────────────────────────────────────────────────
 
@@ -53,7 +54,15 @@ interface EntityRender {
   visibility: 'visible' | 'sensor'
 }
 
-const MECH_SPRITE_BASE_SCALE = 1.6          // pixel-art sprite native size is small; upscale
+// Enemy mech sprite size as a ratio of the player mech's rendered width,
+// indexed by hex distance to the player (0 = same hex, up to VIEW_RANGE=3).
+// The player sprite is 320 px (Mech.tsx); the enemy bitmap is 80 px native.
+const PLAYER_MECH_PX       = 320
+const MECH_SPRITE_NATIVE   = 80
+const MECH_RATIO_BY_DIST   = [0.90, 0.60, 0.40, 0.15]
+const MECH_SCALE_BY_DIST   = MECH_RATIO_BY_DIST.map(
+  r => (PLAYER_MECH_PX * r) / MECH_SPRITE_NATIVE,
+)
 
 export class Combat extends Phaser.Scene {
   private state!: CombatState
@@ -464,10 +473,9 @@ export class Combat extends Phaser.Scene {
       if (!render.sprite) {
         render.sprite = this.add.image(pos.x, pos.y, 'enemy-mech').setOrigin(0.5, 1).setAlpha(render.gfx.alpha)
       }
-      // Distance-based scaling: near entities ~full scale, far ones shrink.
-      const s = MECH_SPRITE_BASE_SCALE * (1.0 - entity.distance / (VIEW_RANGE + 1) * 0.6)
+      const idx = Math.min(entity.distance, MECH_SCALE_BY_DIST.length - 1)
       render.sprite.setPosition(pos.x, pos.y)
-      render.sprite.setScale(s)
+      render.sprite.setScale(MECH_SCALE_BY_DIST[idx])
       render.sprite.setVisible(true)
       render.gfx.clear()
     } else {
