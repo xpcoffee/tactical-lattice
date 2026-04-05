@@ -21,6 +21,7 @@ import { GRID_COLS, GRID_ROWS, VIEW_RANGE, SENSOR_RANGE } from '../../game/const
 // Smaller values = more extreme perspective (faster convergence).
 const PERSP_CAM_D     = 80    // perspective depth parameter
 const HEX_WORLD_SIZE  = 240   // world-space hex size (controls physical spacing)
+const LATERAL_SCALE   = 3.5   // horizontal stretch: widens cone to fill screen width
 const HORIZON_X_RATIO = 0.50  // vanishing point x: screen centre
 const HORIZON_Y_RATIO = 0.40  // horizon line: 40% from top of canvas
 const ANCHOR_X_RATIO  = 0.20  // mech foot x: far left for over-the-shoulder view
@@ -83,8 +84,9 @@ export class Combat extends Phaser.Scene {
     const scale = PERSP_CAM_D / eyeDepth
 
     return {
-      // Lateral convergence: starts at anchorX offset at depth=0, converges to horizonX
-      x: this.horizonX + (this.playerAnchor.x - this.horizonX + rx) * scale,
+      // Lateral convergence: rx scaled independently to fill horizontal space.
+      // horizonX is the true vanishing point; anchorX offset converges toward it.
+      x: this.horizonX + (this.playerAnchor.x - this.horizonX + rx * LATERAL_SCALE) * scale,
       // Vertical convergence: starts at anchorY, converges to horizonY
       y: this.horizonY + (this.playerAnchor.y - this.horizonY) * scale,
     }
