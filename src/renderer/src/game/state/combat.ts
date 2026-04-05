@@ -2,7 +2,9 @@
 // Phaser scenes and React components read from this module; rendering stays in their respective layers.
 
 import { HexCoord, hexDistance, isInBounds, hexInDirection, hexesInCone } from '../hex/grid'
-import { PendingAction, advanceTicks } from '../combat/atb'
+import { PendingAction, advanceTicks, queueAction, MoveActionPayload } from '../combat/atb'
+import { AiBehavior, followStep } from '../mech/ai'
+import { GRID_COLS, GRID_ROWS } from '../constants'
 
 export type EntityType = 'mech' | 'objective'
 
@@ -11,6 +13,7 @@ export interface Entity {
   type: EntityType
   label: string   // single character shown in far-range targetbox
   position: HexCoord
+  ai?: AiBehavior   // undefined = stationary
 }
 
 export interface CombatState {
@@ -42,10 +45,10 @@ export function createInitialCombatState(): CombatState {
     playerPosition: { q: 7, r: 4 },
     facing: 0,
     entities: [
-      { id: 1, type: 'mech',      label: 'M', position: { q: 9,  r: 4 } }, // distance 2 → close range
-      { id: 2, type: 'mech',      label: 'M', position: { q: 3,  r: 2 } }, // distance ~6 → far range
-      { id: 3, type: 'objective', label: 'O', position: { q: 7,  r: 9 } }, // distance 5 → far range
-      { id: 4, type: 'mech',      label: 'E', position: { q: 12, r: 6 } }, // distance ~7 → far range
+      { id: 1, type: 'mech',      label: 'M', position: { q: 9,  r: 4 }, ai: 'follow-player' },
+      { id: 2, type: 'mech',      label: 'M', position: { q: 3,  r: 2 }, ai: 'follow-player' },
+      { id: 3, type: 'objective', label: 'O', position: { q: 7,  r: 9 } },
+      { id: 4, type: 'mech',      label: 'E', position: { q: 12, r: 6 }, ai: 'follow-player' },
     ],
     pendingActions: [],
   }
@@ -61,39 +64,33 @@ export function getEntitiesWithDistance(
   }))
 }
 
-/** Returns all valid move targets within `range` hexes of the player — in-bounds and unoccupied. */
+/** Returns all valid move targets within `range` hexes of the player — in-bounds. */
 export function getMoveTargets(
   playerPos: HexCoord,
-  entities: Entity[],
+  _entities: Entity[],
   range: number,
   cols: number,
   rows: number,
 ): HexCoord[] {
-  const occupied = new Set(entities.map(e => `${e.position.q}-${e.position.r}`))
   const targets: HexCoord[] = []
-
   for (let q = playerPos.q - range; q <= playerPos.q + range; q++) {
     for (let r = playerPos.r - range; r <= playerPos.r + range; r++) {
       const h: HexCoord = { q, r }
       const dist = hexDistance(playerPos, h)
-      if (dist > 0 && dist <= range && isInBounds(h, cols, rows) && !occupied.has(`${q}-${r}`)) {
+      if (dist > 0 && dist <= range && isInBounds(h, cols, rows)) {
         targets.push(h)
       }
     }
   }
-
   return targets
 }
 
-/** Moves the player to `target`, advancing entity pending actions by the movement tick cost. Pure. */
+/** Moves the player to `target`, advancing the world by the movement tick cost. Pure. */
 export function movePlayer(state: CombatState, target: HexCoord): CombatState {
   const ticks = hexDistance(state.playerPosition, target)
-  const { remaining } = advanceTicks(state.pendingActions, ticks)
-  return {
-    ...state,
-    playerPosition: target,
-    pendingActions: remaining,
-  }
+  // AI decisions use the PRE-move player position (last known location).
+  const advanced = advanceWorld(state, ticks)
+  return { ...advanced, playerPosition: target }
 }
 
 /** Rotates the mech facing CW or CCW by one direction step. No tick cost. Pure. */
@@ -104,7 +101,8 @@ export function rotateFacing(state: CombatState, dir: 'cw' | 'ccw'): CombatState
 
 /**
  * Moves the mech one hex forward (facing direction) or backward (opposite).
- * Costs 1 tick. Returns unchanged state if blocked by boundary or entity. Pure.
+ * Costs 1 tick. Returns unchanged state if blocked by boundary. Pure.
+ * Entities no longer block the player — multiple units may share a hex.
  */
 export function moveInDirection(
   state: CombatState,
@@ -115,10 +113,57 @@ export function moveInDirection(
   const dir = forward ? state.facing : (state.facing + 3) % 6
   const target = hexInDirection(state.playerPosition, dir)
   if (!isInBounds(target, cols, rows)) return state
-  const occupied = new Set(state.entities.map(e => `${e.position.q}-${e.position.r}`))
-  if (occupied.has(`${target.q}-${target.r}`)) return state
-  const { remaining } = advanceTicks(state.pendingActions, 1)
-  return { ...state, playerPosition: target, pendingActions: remaining }
+  // AI decisions use the PRE-move player position (last known location).
+  const advanced = advanceWorld(state, 1)
+  return { ...advanced, playerPosition: target }
+}
+
+/**
+ * Advances the world by `ticks`: queues AI decisions for entities that lack a
+ * pending action (locking in the player's position *at decision time*), then
+ * advances all pending actions and applies any that complete.
+ */
+export function advanceWorld(state: CombatState, ticks: number): CombatState {
+  const queued: PendingAction[] = [...state.pendingActions]
+  const queuedIds = new Set(queued.map(a => a.unitId))
+
+  for (const e of state.entities) {
+    if (!e.ai || queuedIds.has(e.id)) continue
+    const target = decideTarget(e, state)
+    if (!target) continue
+    queued.push(queueAction({
+      unitId: e.id,
+      type: 'move',
+      payload: { target } satisfies MoveActionPayload,
+    }))
+  }
+
+  const { completed, remaining } = advanceTicks(queued, ticks)
+  const entities = applyCompletedActions(state.entities, completed)
+  return { ...state, entities, pendingActions: remaining }
+}
+
+/** Picks the next-step hex for an AI entity based on current state. Pure. */
+function decideTarget(entity: Entity, state: CombatState): HexCoord | null {
+  switch (entity.ai) {
+    case 'follow-player':
+      return followStep(entity.position, state.playerPosition, GRID_COLS, GRID_ROWS)
+    default:
+      return null
+  }
+}
+
+/** Returns a new entities array with positions updated for each completed move action. */
+function applyCompletedActions(entities: Entity[], completed: PendingAction[]): Entity[] {
+  if (!completed.length) return entities
+  const moves = new Map<number, HexCoord>()
+  for (const a of completed) {
+    if (a.type !== 'move') continue
+    const payload = a.payload as MoveActionPayload | undefined
+    if (payload?.target) moves.set(a.unitId, payload.target)
+  }
+  if (!moves.size) return entities
+  return entities.map(e => moves.has(e.id) ? { ...e, position: moves.get(e.id)! } : e)
 }
 
 export interface VisibleEntity extends Entity {
@@ -139,6 +184,10 @@ export function getVisibleEntities(
   const coneSet = new Set(cone.map(h => `${h.q}-${h.r}`))
   return state.entities.map(e => {
     const distance = hexDistance(e.position, state.playerPosition)
+    // Co-located entities are always visible (they're standing on the player's hex).
+    if (distance === 0) {
+      return { ...e, distance, isVisible: true, isSensor: false }
+    }
     const inCone = coneSet.has(`${e.position.q}-${e.position.r}`)
     return {
       ...e,

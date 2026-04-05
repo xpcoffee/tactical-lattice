@@ -4,7 +4,12 @@
 // issues an action, the world advances by that action's tick count — enemy
 // actions execute across those ticks — then pauses for the next decision.
 
+import type { HexCoord } from '../hex/grid'
+
 export type ActionType = 'move' | 'fire-light' | 'fire-heavy' | 'drone-ability'
+
+/** Payload for a 'move' action — the destination hex is baked in at queue time. */
+export interface MoveActionPayload { target: HexCoord }
 
 export const TICK_COSTS: Record<ActionType, number> = {
   'move': 1,
