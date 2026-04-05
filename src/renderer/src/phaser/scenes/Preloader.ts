@@ -1,4 +1,5 @@
 import Phaser from 'phaser'
+import enemyMechUrl from '../../assets/mech-enemy.png'
 
 export class Preloader extends Phaser.Scene {
   constructor() {
@@ -6,7 +7,7 @@ export class Preloader extends Phaser.Scene {
   }
 
   preload(): void {
-    // Load sprite sheets, tilesets, and audio here before combat starts
+    this.load.image('enemy-mech', enemyMechUrl)
   }
 
   create(): void {

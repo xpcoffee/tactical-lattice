@@ -47,10 +47,13 @@ function hexKey(h: HexCoord): string { return `${h.q},${h.r}` }
 // ─── Entity render tracking ───────────────────────────────────────────────────
 
 interface EntityRender {
-  gfx: Phaser.GameObjects.Graphics
+  gfx: Phaser.GameObjects.Graphics          // fallback / sensor / objective render
+  sprite?: Phaser.GameObjects.Image          // used for visible mech entities
   label?: Phaser.GameObjects.Text
   visibility: 'visible' | 'sensor'
 }
+
+const MECH_SPRITE_BASE_SCALE = 1.6          // pixel-art sprite native size is small; upscale
 
 export class Combat extends Phaser.Scene {
   private state!: CombatState
@@ -354,11 +357,15 @@ export class Combat extends Phaser.Scene {
       if (!render || this.leavingEntities.has(entity.id)) continue
 
       const pos = this.entityScreenPos(entity)
-      if (!pos) { render.gfx.setVisible(false); render.label?.setVisible(false); continue }
+      if (!pos) {
+        render.gfx.setVisible(false)
+        render.sprite?.setVisible(false)
+        render.label?.setVisible(false)
+        continue
+      }
 
       render.gfx.setVisible(true)
-      render.gfx.clear()
-      this.drawEntityGfx(render.gfx, pos, entity, render.visibility)
+      this.paintEntity(render, pos, entity, render.visibility)
       if (render.label) { render.label.setVisible(true); render.label.setPosition(pos.x, pos.y) }
     }
   }
@@ -386,33 +393,30 @@ export class Combat extends Phaser.Scene {
         if (this.leavingEntities.has(entity.id)) {
           const existing = this.entityRenders.get(entity.id)
           if (existing) {
-            this.tweens.killTweensOf(existing.gfx)
-            if (existing.label) this.tweens.killTweensOf(existing.label)
+            for (const t of this.renderTargets(existing)) this.tweens.killTweensOf(t)
             this.leavingEntities.delete(entity.id)
-            existing.gfx.clear()
-            this.drawEntityGfx(existing.gfx, pos, entity, newV)
+            this.paintEntity(existing, pos, entity, newV)
             existing.visibility = newV
-            const fadeTargets: Array<Phaser.GameObjects.Graphics | Phaser.GameObjects.Text> = [existing.gfx]
-            if (existing.label) fadeTargets.push(existing.label)
-            this.tweens.add({ targets: fadeTargets, alpha: 1, duration: ENTITY_FADE_DURATION })
+            this.tweens.add({ targets: this.renderTargets(existing), alpha: 1, duration: ENTITY_FADE_DURATION })
             continue
           }
         }
-        const g     = this.add.graphics().setAlpha(0)
-        this.drawEntityGfx(g, pos, entity, newV)
+        const g = this.add.graphics().setAlpha(0)
         let label: Phaser.GameObjects.Text | undefined
         if (newV === 'sensor') {
           label = this.add.text(pos.x, pos.y, entity.label, {
             fontSize: '10px', color: '#4a7a4a',
           }).setOrigin(0.5).setAlpha(0)
         }
-        this.entityRenders.set(entity.id, { gfx: g, label, visibility: newV })
-        this.tweens.add({ targets: label ? [g, label] : [g], alpha: 1, duration: ENTITY_FADE_DURATION })
+        const render: EntityRender = { gfx: g, label, visibility: newV }
+        this.paintEntity(render, pos, entity, newV)
+        if (render.sprite) render.sprite.setAlpha(0)
+        this.entityRenders.set(entity.id, render)
+        this.tweens.add({ targets: this.renderTargets(render), alpha: 1, duration: ENTITY_FADE_DURATION })
       } else {
         const render = this.entityRenders.get(entity.id)
         if (!render) continue  // guard: render may have been destroyed mid-animation
-        render.gfx.clear()
-        this.drawEntityGfx(render.gfx, pos, entity, newV)
+        this.paintEntity(render, pos, entity, newV)
         if (oldV !== newV) {
           if (newV === 'visible' && render.label) { render.label.destroy(); render.label = undefined }
           else if (newV === 'sensor' && !render.label) {
@@ -432,12 +436,10 @@ export class Combat extends Phaser.Scene {
         const render = this.entityRenders.get(id)
         if (render && !this.leavingEntities.has(id)) {
           this.leavingEntities.add(id)
-          const targets: Array<Phaser.GameObjects.Graphics | Phaser.GameObjects.Text> = [render.gfx]
-          if (render.label) targets.push(render.label)
           this.tweens.add({
-            targets, alpha: 0, duration: ENTITY_FADE_DURATION,
+            targets: this.renderTargets(render), alpha: 0, duration: ENTITY_FADE_DURATION,
             onComplete: () => {
-              render.gfx.destroy(); render.label?.destroy()
+              render.gfx.destroy(); render.sprite?.destroy(); render.label?.destroy()
               this.entityRenders.delete(id); this.leavingEntities.delete(id)
             },
           })
@@ -448,19 +450,47 @@ export class Combat extends Phaser.Scene {
     this.prevVisibility = newVis
   }
 
-  private drawEntityGfx(
-    g: Phaser.GameObjects.Graphics,
+  // Draws an entity using either the mech sprite (visible enemy mech) or a
+  // graphics marker (objective or sensor-only). Creates the sprite on demand.
+  private paintEntity(
+    render: EntityRender,
     pos: { x: number; y: number },
     entity: VisibleEntity,
     visibility: 'visible' | 'sensor',
   ): void {
-    if (visibility === 'visible') {
-      const s = (1.0 - entity.distance / (VIEW_RANGE + 1)) * 40
-      g.lineStyle(2, 0xe6c200, 1)
-      g.strokeRect(pos.x - s / 2, pos.y - s / 2, s, s)
+    const useSprite = visibility === 'visible' && entity.type === 'mech'
+
+    if (useSprite) {
+      if (!render.sprite) {
+        render.sprite = this.add.image(pos.x, pos.y, 'enemy-mech').setOrigin(0.5, 1).setAlpha(render.gfx.alpha)
+      }
+      // Distance-based scaling: near entities ~full scale, far ones shrink.
+      const s = MECH_SPRITE_BASE_SCALE * (1.0 - entity.distance / (VIEW_RANGE + 1) * 0.6)
+      render.sprite.setPosition(pos.x, pos.y)
+      render.sprite.setScale(s)
+      render.sprite.setVisible(true)
+      render.gfx.clear()
     } else {
-      g.lineStyle(1, 0x4a7a4a, 1)
-      g.strokeRect(pos.x - 14, pos.y - 10, 28, 20)
+      if (render.sprite) render.sprite.setVisible(false)
+      render.gfx.clear()
+      if (visibility === 'visible') {
+        const s = (1.0 - entity.distance / (VIEW_RANGE + 1)) * 40
+        render.gfx.lineStyle(2, 0xe6c200, 1)
+        render.gfx.strokeRect(pos.x - s / 2, pos.y - s / 2, s, s)
+      } else {
+        render.gfx.lineStyle(1, 0x4a7a4a, 1)
+        render.gfx.strokeRect(pos.x - 14, pos.y - 10, 28, 20)
+      }
     }
+  }
+
+  // All display objects belonging to an entity render — for coordinated tweens.
+  private renderTargets(
+    render: EntityRender,
+  ): Array<Phaser.GameObjects.Graphics | Phaser.GameObjects.Text | Phaser.GameObjects.Image> {
+    const t: Array<Phaser.GameObjects.Graphics | Phaser.GameObjects.Text | Phaser.GameObjects.Image> = [render.gfx]
+    if (render.sprite) t.push(render.sprite)
+    if (render.label) t.push(render.label)
+    return t
   }
 }
