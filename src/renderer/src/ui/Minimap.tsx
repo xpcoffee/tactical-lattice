@@ -7,16 +7,14 @@
 
 import { useState, useEffect } from 'react'
 import { EventBus } from '../phaser/EventBus'
-import { CombatState, COMBAT_STATE_CHANGED, getLatestState, getMoveTargets } from '../game/state/combat'
+import { CombatState, COMBAT_STATE_CHANGED, getLatestState } from '../game/state/combat'
 import { type HexCoord, DIRECTIONS, hexToPixel, hexDistance, hexesInCone } from '../game/hex/grid'
 import { VIEW_RANGE, SENSOR_RANGE, GRID_COLS, GRID_ROWS } from '../game/constants'
 
 const MINI_HEX_SIZE = 12
-const MOVE_RANGE = 3
 
 interface MinimapProps {
-  mode: 'idle' | 'move-select'
-  onMoveConfirm: (target: HexCoord) => void
+  mode: 'idle' | 'map'
 }
 
 // Pixel path for a flat-top hex centred at (cx, cy).
@@ -37,7 +35,7 @@ function facingRotation(facing: number): number {
   return -90 - angleDeg
 }
 
-export default function Minimap({ mode, onMoveConfirm }: MinimapProps) {
+export default function Minimap({ mode }: MinimapProps) {
   const [combatState, setCombatState] = useState<CombatState>(() => getLatestState())
 
   useEffect(() => {
@@ -46,7 +44,7 @@ export default function Minimap({ mode, onMoveConfirm }: MinimapProps) {
     return () => { EventBus.off(COMBAT_STATE_CHANGED, handler) }
   }, [])
 
-  const isFullscreen = mode === 'move-select'
+  const isFullscreen = mode === 'map'
   // Size the viewbox around SENSOR_RANGE hexes in each direction.
   const viewRadius = (SENSOR_RANGE + 1) * MINI_HEX_SIZE * 2
   const svgSize = viewRadius * 2
@@ -64,19 +62,13 @@ export default function Minimap({ mode, onMoveConfirm }: MinimapProps) {
     hexesInCone(playerPosition, facing, VIEW_RANGE, GRID_COLS, GRID_ROWS).map(h => `${h.q},${h.r}`)
   )
 
-  // Move targets (only relevant in move-select mode).
-  const moveTargets = isFullscreen
-    ? getMoveTargets(playerPosition, entities, MOVE_RANGE, GRID_COLS, GRID_ROWS)
-    : []
-  const moveTargetSet = new Set(moveTargets.map(h => `${h.q},${h.r}`))
-
-  // All hexes to render: SENSOR_RANGE radius around player, plus move targets.
+  // All hexes to render: SENSOR_RANGE radius around player.
   const renderHexes: HexCoord[] = []
   for (let q = playerPosition.q - SENSOR_RANGE - 1; q <= playerPosition.q + SENSOR_RANGE + 1; q++) {
     for (let r = playerPosition.r - SENSOR_RANGE - 1; r <= playerPosition.r + SENSOR_RANGE + 1; r++) {
       if (q < 0 || q >= GRID_COLS || r < 0 || r >= GRID_ROWS) continue
       const d = hexDistance({ q, r }, playerPosition)
-      if (d <= SENSOR_RANGE || moveTargetSet.has(`${q},${r}`)) {
+      if (d <= SENSOR_RANGE) {
         renderHexes.push({ q, r })
       }
     }
@@ -108,7 +100,7 @@ export default function Minimap({ mode, onMoveConfirm }: MinimapProps) {
           padding: '12px 16px 8px',
           borderBottom: '1px solid #2a2a3a',
         }}>
-          MOVE — SELECT DESTINATION
+          TACTICAL MAP — HJKL/ARROWS TO MOVE · [M] TO CLOSE
         </div>
       )}
       <svg
@@ -125,26 +117,18 @@ export default function Minimap({ mode, onMoveConfirm }: MinimapProps) {
             const key = `${h.q},${h.r}`
             const inVisual  = visualConeSet.has(key)
             const inSensor  = sensorConeSet.has(key)
-            const isTarget  = moveTargetSet.has(key)
 
             return (
               <path
                 key={key}
                 d={hexPath(x, y, MINI_HEX_SIZE)}
                 fill={
-                  isFullscreen && isTarget ? 'rgba(100,200,100,0.18)' :
-                  inVisual  ? 'rgba(74,122,255,0.18)' :
-                  inSensor  ? 'rgba(42,74,106,0.12)'  :
+                  inVisual ? 'rgba(74,122,255,0.18)' :
+                  inSensor ? 'rgba(42,74,106,0.12)'  :
                   'none'
                 }
-                stroke={isFullscreen && isTarget ? '#4aff4a' : '#4a4a7a'}
-                strokeWidth={isFullscreen && isTarget ? 1.2 : 0.8}
-                onClick={
-                  isFullscreen && isTarget
-                    ? () => onMoveConfirm(h)
-                    : undefined
-                }
-                style={{ cursor: isFullscreen && isTarget ? 'pointer' : 'default' }}
+                stroke="#4a4a7a"
+                strokeWidth={0.8}
               />
             )
           })}

@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test'
 import { launchGame } from './launch'
 
-test('move-select mode expands minimap and highlights targets', async () => {
+test('M toggles fullscreen tactical map', async () => {
   const game = await launchGame()
 
   // Idle: all three panels visible
@@ -9,39 +9,27 @@ test('move-select mode expands minimap and highlights targets', async () => {
   await expect(game.page.locator('.panel-mech-status')).toBeVisible()
   await expect(game.page.locator('.panel-minimap')).toBeVisible()
 
-  // Press M → enter move-select mode
+  // Press M → enter map mode
   await game.page.keyboard.press('m')
   await game.page.waitForTimeout(300)
-
-  // Minimap should have fullscreen class
   await expect(game.page.locator('.panel-minimap--fullscreen')).toBeVisible()
 
-  // Battlefield and mech panel should be hidden
+  // Battlefield and mech panel hidden
   await expect(game.page.locator('.panel-battlefield')).toHaveClass(/panel--hidden/)
   await expect(game.page.locator('.panel-mech-status')).toHaveClass(/panel--hidden/)
 
-  // Move targets (green highlighted hexes) should exist
-  const targets = game.page.locator('svg path[stroke="#4aff4a"]')
-  const targetCount = await targets.count()
-  // 3-hex radius around player = up to 37 hexes (minus out-of-bounds and occupied)
-  expect(targetCount).toBeGreaterThan(20)
-  expect(targetCount).toBeLessThanOrEqual(37)
+  await game.screenshot('map-open')
 
-  await game.screenshot('move-select')
-
-  // Click a target hex → should move and return to idle
-  await targets.first().click()
+  // Press M again → toggle back to idle
+  await game.page.keyboard.press('m')
   await game.page.waitForTimeout(300)
-
-  // Back to idle: fullscreen class gone, panels visible again
   await expect(game.page.locator('.panel-minimap--fullscreen')).not.toBeVisible()
   await expect(game.page.locator('.panel-battlefield')).not.toHaveClass(/panel--hidden/)
 
-  await game.screenshot('after-move')
   await game.close()
 })
 
-test('escape from move-select returns to idle without moving', async () => {
+test('Escape also closes map mode', async () => {
   const game = await launchGame()
 
   await expect(game.page.locator('.panel-battlefield')).toBeVisible()
@@ -51,9 +39,33 @@ test('escape from move-select returns to idle without moving', async () => {
 
   await game.page.keyboard.press('Escape')
   await game.page.waitForTimeout(300)
-
   await expect(game.page.locator('.panel-minimap--fullscreen')).not.toBeVisible()
   await expect(game.page.locator('.panel-battlefield')).not.toHaveClass(/panel--hidden/)
 
+  await game.close()
+})
+
+test('movement keys work inside map mode', async () => {
+  const game = await launchGame()
+  await expect(game.page.locator('.panel-battlefield')).toBeVisible()
+
+  await game.page.keyboard.press('m')
+  await game.page.waitForTimeout(200)
+  await expect(game.page.locator('.panel-minimap--fullscreen')).toBeVisible()
+
+  // Read an entity marker position on the (fullscreen) minimap
+  const readMarker = () => game.page.evaluate(() =>
+    Array.from(document.querySelectorAll('svg g text'))
+      .map(el => `${el.getAttribute('x')},${el.getAttribute('y')}`)
+      .join('|'),
+  )
+  const before = await readMarker()
+  await game.page.keyboard.press('k')
+  await game.page.waitForTimeout(400)
+  const after = await readMarker()
+  expect(after).not.toBe(before)
+
+  // Still in map mode.
+  await expect(game.page.locator('.panel-minimap--fullscreen')).toBeVisible()
   await game.close()
 })

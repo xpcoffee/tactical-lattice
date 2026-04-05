@@ -1,23 +1,26 @@
-import { useRef, useState, useEffect, useCallback } from 'react'
+import { useRef, useState, useEffect } from 'react'
 import PhaserGame, { type IRefPhaserGame } from './phaser/PhaserGame'
 import { EventBus } from './phaser/EventBus'
-import { movePlayer, rotateFacing, moveInDirection, getLatestState, setLatestState, COMBAT_STATE_CHANGED } from './game/state/combat'
+import { rotateFacing, moveInDirection, getLatestState, setLatestState, COMBAT_STATE_CHANGED } from './game/state/combat'
 import { logAction } from './game/state/actionLog'
-import { type HexCoord } from './game/hex/grid'
 import { GRID_COLS, GRID_ROWS } from './game/constants'
 import Mech from './ui/Mech'
 import Minimap from './ui/Minimap'
 import ActionHUD from './ui/ActionHUD'
 
+export type AppMode = 'idle' | 'map'
+
 export default function App() {
   const phaserRef = useRef<IRefPhaserGame>(null)
-  const [mode, setMode] = useState<'idle' | 'move-select'>('idle')
+  const [mode, setMode] = useState<AppMode>('idle')
 
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
-      if ((e.key === 'm' || e.key === 'M') && mode === 'idle') { setMode('move-select'); return }
-      if (e.key === 'Escape' && mode === 'move-select') { setMode('idle'); return }
-      if (mode !== 'idle') return
+      if (e.key === 'm' || e.key === 'M') {
+        setMode(prev => prev === 'map' ? 'idle' : 'map')
+        return
+      }
+      if (e.key === 'Escape' && mode === 'map') { setMode('idle'); return }
 
       const state = getLatestState()
       let newState = state
@@ -40,26 +43,18 @@ export default function App() {
     return () => document.removeEventListener('keydown', handleKey)
   }, [mode])
 
-  const handleMoveConfirm = useCallback((target: HexCoord) => {
-    const newState = movePlayer(getLatestState(), target)
-    setLatestState(newState)
-    logAction(`move-select:${target.q},${target.r}`, newState)
-    EventBus.emit(COMBAT_STATE_CHANGED, newState)
-    setMode('idle')
-  }, [])
-
   return (
     <div className="app-layout">
-      <div className={`panel-mech-status${mode === 'move-select' ? ' panel--hidden' : ''}`}>
+      <div className={`panel-mech-status${mode === 'map' ? ' panel--hidden' : ''}`}>
         <Mech />
       </div>
-      <div className={`panel-battlefield${mode === 'move-select' ? ' panel--hidden' : ''}`}>
+      <div className={`panel-battlefield${mode === 'map' ? ' panel--hidden' : ''}`}>
         <PhaserGame ref={phaserRef} />
       </div>
-      <div className={`panel-minimap${mode === 'move-select' ? ' panel-minimap--fullscreen' : ''}`}>
-        <Minimap mode={mode} onMoveConfirm={handleMoveConfirm} />
+      <div className={`panel-minimap${mode === 'map' ? ' panel-minimap--fullscreen' : ''}`}>
+        <Minimap mode={mode} />
       </div>
-      <ActionHUD mode={mode} onMovePress={() => setMode('move-select')} />
+      <ActionHUD mode={mode} onMapToggle={() => setMode(prev => prev === 'map' ? 'idle' : 'map')} />
     </div>
   )
 }

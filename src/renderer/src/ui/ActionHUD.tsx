@@ -1,21 +1,18 @@
 interface ActionHUDProps {
-  mode: 'idle' | 'move-select'
-  onMovePress: () => void
+  mode: 'idle' | 'map'
+  onMapToggle: () => void
 }
 
-export default function ActionHUD({ mode, onMovePress }: ActionHUDProps) {
+export default function ActionHUD({ mode, onMapToggle }: ActionHUDProps) {
+  const active = mode === 'map'
   return (
     <div className="panel-action-hud">
       <button
-        className={`action-btn${mode === 'move-select' ? ' action-btn--selected' : ' action-btn--active'}`}
-        onClick={mode === 'idle' ? onMovePress : undefined}
-        style={{ pointerEvents: mode === 'move-select' ? 'none' : 'auto' }}
+        className={`action-btn${active ? ' action-btn--selected' : ' action-btn--active'}`}
+        onClick={onMapToggle}
       >
-        MOVE<span className="action-keybind">[M]</span>
+        MAP<span className="action-keybind">[M]</span>
       </button>
-      {mode === 'move-select' && (
-        <span className="action-cancel">ESC to cancel</span>
-      )}
     </div>
   )
 }
