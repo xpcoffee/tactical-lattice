@@ -31,7 +31,7 @@ const STACK_DY =  6
 // Companion strip: entities standing on the player's hex are drawn in a
 // fixed screen-space row slightly above centre. The first sprite sits just
 // right of screen centre, subsequent entities alternate right/left around it.
-const COMPANION_STRIP_Y_RATIO      = 0.42   // just above screen centre
+const COMPANION_STRIP_Y_RATIO      = 0.52   // just below screen centre
 const COMPANION_STRIP_CENTER_RATIO = 0.55   // first sprite sits just right of centre
 const COMPANION_STRIP_STEP         = 180    // px between alternating positions
 
