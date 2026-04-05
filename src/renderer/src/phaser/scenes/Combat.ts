@@ -381,6 +381,23 @@ export class Combat extends Phaser.Scene {
       if (!pos) continue
 
       if (!oldV) {
+        // Entity is re-entering after a fade-out that hasn't finished yet:
+        // cancel the fade-out tween and reuse the existing render.
+        if (this.leavingEntities.has(entity.id)) {
+          const existing = this.entityRenders.get(entity.id)
+          if (existing) {
+            this.tweens.killTweensOf(existing.gfx)
+            if (existing.label) this.tweens.killTweensOf(existing.label)
+            this.leavingEntities.delete(entity.id)
+            existing.gfx.clear()
+            this.drawEntityGfx(existing.gfx, pos, entity, newV)
+            existing.visibility = newV
+            const fadeTargets: Array<Phaser.GameObjects.Graphics | Phaser.GameObjects.Text> = [existing.gfx]
+            if (existing.label) fadeTargets.push(existing.label)
+            this.tweens.add({ targets: fadeTargets, alpha: 1, duration: ENTITY_FADE_DURATION })
+            continue
+          }
+        }
         const g     = this.add.graphics().setAlpha(0)
         this.drawEntityGfx(g, pos, entity, newV)
         let label: Phaser.GameObjects.Text | undefined
@@ -392,7 +409,8 @@ export class Combat extends Phaser.Scene {
         this.entityRenders.set(entity.id, { gfx: g, label, visibility: newV })
         this.tweens.add({ targets: label ? [g, label] : [g], alpha: 1, duration: ENTITY_FADE_DURATION })
       } else {
-        const render = this.entityRenders.get(entity.id)!
+        const render = this.entityRenders.get(entity.id)
+        if (!render) continue  // guard: render may have been destroyed mid-animation
         render.gfx.clear()
         this.drawEntityGfx(render.gfx, pos, entity, newV)
         if (oldV !== newV) {
