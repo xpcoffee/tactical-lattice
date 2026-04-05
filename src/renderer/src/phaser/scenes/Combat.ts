@@ -29,11 +29,11 @@ const STACK_DX = 10
 const STACK_DY =  6
 
 // Companion strip: entities standing on the player's hex are drawn in a
-// fixed screen-space row slightly above screen centre, spread across the
-// canvas width to the right of the mech.
-const COMPANION_STRIP_Y_RATIO     = 0.42   // just above screen centre
-const COMPANION_STRIP_RIGHT_RATIO = 0.88   // rightmost sprite position
-const COMPANION_STRIP_STEP        = 180    // px between sprite centres (right → left)
+// fixed screen-space row slightly above centre. The first sprite sits just
+// right of screen centre, subsequent entities alternate right/left around it.
+const COMPANION_STRIP_Y_RATIO      = 0.42   // just above screen centre
+const COMPANION_STRIP_CENTER_RATIO = 0.55   // first sprite sits just right of centre
+const COMPANION_STRIP_STEP         = 180    // px between alternating positions
 
 // ─── Hex animation tracking ───────────────────────────────────────────────────
 
@@ -59,7 +59,7 @@ interface EntityRender {
 // The player sprite is 320 px (Mech.tsx); the enemy bitmap is 80 px native.
 const PLAYER_MECH_PX       = 320
 const MECH_SPRITE_NATIVE   = 80
-const MECH_RATIO_BY_DIST   = [0.90, 0.60, 0.40, 0.15]
+const MECH_RATIO_BY_DIST   = [0.90, 0.40, 0.20, 0.05]
 const MECH_SCALE_BY_DIST   = MECH_RATIO_BY_DIST.map(
   r => (PLAYER_MECH_PX * r) / MECH_SPRITE_NATIVE,
 )
@@ -340,12 +340,13 @@ export class Combat extends Phaser.Scene {
     if (!info) return null
 
     if (info.onPlayerHex) {
-      // Companion strip: screen-space row, right-anchored, newer IDs on right.
-      const rightX = this.scale.width * COMPANION_STRIP_RIGHT_RATIO
-      const y      = this.scale.height * COMPANION_STRIP_Y_RATIO
-      // Reverse index so the highest-id entity sits at the rightmost position.
-      const revIdx = (info.groupSize - 1) - info.index
-      return { x: rightX - revIdx * COMPANION_STRIP_STEP, y }
+      // Companion strip: first sprite sits at the centre anchor, subsequent
+      // ones alternate right / left around it: 0, +1·step, -1·step, +2·step…
+      const centreX = this.scale.width  * COMPANION_STRIP_CENTER_RATIO
+      const y       = this.scale.height * COMPANION_STRIP_Y_RATIO
+      const i = info.index
+      const slot = i === 0 ? 0 : (i % 2 === 1 ? (i + 1) / 2 : -(i / 2))
+      return { x: centreX + slot * COMPANION_STRIP_STEP, y }
     }
 
     // Ground rendering: project the hex centre, then apply stagger offset.
