@@ -5,11 +5,11 @@
 import mechSprite from '../assets/mech-placeholder.png'
 import { getPlayerBuild } from '../game/state/combat'
 import { layoutBuild, layoutBounds } from '../game/mech/assembly'
-import { DEV_LIBRARY } from '../game/mech/library.dev'
+import { getLibrary } from '../game/mech/library'
 import type { Slot } from '../game/mech/components'
 import { s } from '../app/scale'
 
-const RENDER_WIDTH = 320 // reference pixels — scaled via s()
+const RENDER_WIDTH = 180 // reference pixels — scaled via s()
 const SLOT_COLORS: Record<Slot, string> = { chassis: '#888', core: '#e6c200', armament: '#cc4444', logistics: '#4a7aff', joint: '#66aa66' }
 
 export default function Mech() {
@@ -24,7 +24,8 @@ export default function Mech() {
     )
   }
 
-  const allEntries = layoutBuild(build, DEV_LIBRARY, 'rear')
+  const library = getLibrary()
+  const allEntries = layoutBuild(build, library, 'rear')
   const entries = allEntries.filter(e => e.visible)
   const bounds = layoutBounds(entries)
   if (bounds.width === 0 || bounds.height === 0) {
@@ -43,7 +44,7 @@ export default function Mech() {
         height: s(scaledH),
       }}>
         {entries.map(entry => {
-          const def = DEV_LIBRARY.find(d => d.id === entry.defId)
+          const def = library.find(d => d.id === entry.defId)
           const slot = def?.slot ?? 'chassis'
           const color = SLOT_COLORS[slot]
           const rotStyle = entry.rotation !== 0 ? {
@@ -68,6 +69,13 @@ export default function Mech() {
                 ...rotStyle,
               }}
             >
+              {entry.sprite.url && !entry.sprite.url.startsWith('data:') && (
+                <img
+                  src={entry.sprite.url}
+                  style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'fill', imageRendering: 'pixelated', pointerEvents: 'none' }}
+                  draggable={false}
+                />
+              )}
               <span style={{
                 fontFamily: 'monospace',
                 fontSize: s(7),
@@ -78,6 +86,7 @@ export default function Mech() {
                 overflow: 'hidden',
                 textOverflow: 'ellipsis',
                 padding: `0 ${s(2)}`,
+                position: 'relative',
               }}>
                 {def?.name ?? entry.defId}
               </span>

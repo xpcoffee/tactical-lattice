@@ -1,0 +1,130 @@
+{
+  "id": "comp-1775485030478",
+  "name": "OCELOT MK-II",
+  "slot": "chassis",
+  "size": "medium",
+  "physics": {
+    "inertia": 3,
+    "thrust": 0,
+    "energy": 0
+  },
+  "sprites": {
+    "front": {
+      "url": "sprites/comp-1775485030478-front.png",
+      "width": 380,
+      "height": 735
+    },
+    "rear": {
+      "url": "sprites/comp-1775485030478-rear.png",
+      "width": 380,
+      "height": 735
+    }
+  },
+  "attachPoints": [
+    {
+      "id": "pt-1775485091011-2",
+      "kind": "mount",
+      "role": "parent",
+      "front": {
+        "x": 185,
+        "y": 202
+      },
+      "rear": {
+        "x": 195,
+        "y": 202
+      },
+      "z": 0,
+      "face": "front"
+    },
+    {
+      "id": "pt-1775485101603-3",
+      "kind": "mount",
+      "role": "parent",
+      "front": {
+        "x": 189,
+        "y": 283
+      },
+      "rear": {
+        "x": 191,
+        "y": 283
+      },
+      "z": 0,
+      "face": "front"
+    },
+    {
+      "id": "pt-1775485117527-4",
+      "kind": "mount",
+      "role": "parent",
+      "front": {
+        "x": 372,
+        "y": 225
+      },
+      "rear": {
+        "x": 8,
+        "y": 225
+      },
+      "z": 0,
+      "face": "edge"
+    },
+    {
+      "id": "pt-1775485120054-5",
+      "kind": "mount",
+      "role": "parent",
+      "front": {
+        "x": 10,
+        "y": 216
+      },
+      "rear": {
+        "x": 370,
+        "y": 216
+      },
+      "z": 0,
+      "face": "edge"
+    },
+    {
+      "id": "pt-1775485197959-7",
+      "kind": "mount",
+      "role": "parent",
+      "front": {
+        "x": 57,
+        "y": 265
+      },
+      "rear": {
+        "x": 323,
+        "y": 265
+      },
+      "z": 0,
+      "face": "front"
+    },
+    {
+      "id": "pt-1775485199538-8",
+      "kind": "mount",
+      "role": "parent",
+      "front": {
+        "x": 320,
+        "y": 264
+      },
+      "rear": {
+        "x": 60,
+        "y": 264
+      },
+      "z": 0,
+      "face": "front"
+    },
+    {
+      "id": "pt-1775485205026-9",
+      "kind": "mount",
+      "role": "parent",
+      "front": {
+        "x": 195,
+        "y": 444
+      },
+      "rear": {
+        "x": 185,
+        "y": 444
+      },
+      "z": 0,
+      "face": "front"
+    }
+  ]
+}

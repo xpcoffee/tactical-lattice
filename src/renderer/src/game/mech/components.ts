@@ -32,6 +32,8 @@ export interface AttachPoint {
   face: AttachFace
 }
 
+export type ComponentSize = 'small' | 'medium' | 'large'
+
 export interface ComponentDef {
   id: string
   name: string
@@ -41,6 +43,8 @@ export interface ComponentDef {
   attachPoints: AttachPoint[]
   /** When true, this component acts as a rotatable joint. */
   isJoint?: boolean
+  /** Mech size class — determines entity scale in the game world. */
+  size?: ComponentSize
 }
 
 // ─── Build (assembled mech) ─────────────────────────────────────────

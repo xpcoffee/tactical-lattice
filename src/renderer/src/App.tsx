@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import type { AppScene } from './app/scenes'
 import { parseDevFlags } from './app/devFlags'
 import type { MechBuild } from './game/mech/components'
@@ -12,6 +12,12 @@ const flags = parseDevFlags()
 export default function App() {
   const [scene, setScene] = useState<AppScene>(flags.startScene)
   const [playerBuild, setPlayerBuild] = useState<MechBuild>(DEV_DEFAULT_BUILD)
+
+  useEffect(() => {
+    window.api.loadBuilds().then(builds => {
+      if (builds.length > 0) setPlayerBuild(builds[builds.length - 1])
+    })
+  }, [])
 
   function handleLaunch(build: MechBuild) {
     setPlayerBuild(build)

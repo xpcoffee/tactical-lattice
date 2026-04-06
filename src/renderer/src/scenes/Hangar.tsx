@@ -1,10 +1,12 @@
-import { useState, useMemo, useCallback, useRef } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import type { AppScene } from '../app/scenes'
-import type { ComponentDef, MechBuild, Slot, EdgeFacing } from '../game/mech/components'
+import type { ComponentDef, ComponentSize, MechBuild, Slot, EdgeFacing, ViewKind } from '../game/mech/components'
 import { s } from '../app/scale'
 import { attach, detach, buildPhysics, validateBuild } from '../game/mech/components'
 import { layoutBuild, layoutBounds, type LayoutEntry } from '../game/mech/assembly'
-import { DEV_LIBRARY, DEV_CHASSIS } from '../game/mech/library.dev'
+import { DEV_CHASSIS } from '../game/mech/library.dev'
+import { loadLibrary, getLibrary } from '../game/mech/library'
+import ComponentEditor from './ComponentEditor'
 
 interface HangarProps {
   devMode: boolean
@@ -17,10 +19,15 @@ function makeInstanceId(): string {
   return `inst-${nextInstanceId++}`
 }
 
+let nextBuildId = 1
+function makeBuildId(): string {
+  return `build-${Date.now()}-${nextBuildId++}`
+}
+
 function freshBuild(): MechBuild {
   const chassisInstId = makeInstanceId()
   return {
-    id: 'player-build',
+    id: makeBuildId(),
     name: 'My Mech',
     rootInstanceId: chassisInstId,
     instances: [{ instanceId: chassisInstId, defId: DEV_CHASSIS.id }],
@@ -31,6 +38,18 @@ function freshBuild(): MechBuild {
 const SLOT_ORDER: Slot[] = ['chassis', 'core', 'armament', 'logistics', 'joint']
 const SLOT_LABELS: Record<Slot, string> = { chassis: 'CHASSIS', core: 'CORE', armament: 'ARMAMENT', logistics: 'LOGISTICS', joint: 'JOINT' }
 const SLOT_COLORS: Record<Slot, string> = { chassis: '#888', core: '#e6c200', armament: '#cc4444', logistics: '#4a7aff', joint: '#66aa66' }
+
+const PERSON_RATIO: Record<ComponentSize, number> = { small: 0.4, medium: 0.2, large: 0.1 }
+const PERSON_SVG = `data:image/svg+xml,${encodeURIComponent(
+  `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 50" fill="none" stroke="#e6c200" stroke-width="1.5" stroke-linecap="round">
+    <circle cx="10" cy="5" r="4"/>
+    <line x1="10" y1="9" x2="10" y2="30"/>
+    <line x1="10" y1="14" x2="3" y2="22"/>
+    <line x1="10" y1="14" x2="17" y2="22"/>
+    <line x1="10" y1="30" x2="4" y2="46"/>
+    <line x1="10" y1="30" x2="16" y2="46"/>
+  </svg>`,
+)}`
 
 interface PendingEdge {
   parentInstanceId: string
@@ -68,19 +87,53 @@ export default function Hangar({ devMode: _devMode, onLaunch, onNavigate }: Hang
   const [error, setError] = useState<string | null>(null)
   const [pendingEdge, setPendingEdge] = useState<PendingEdge | null>(null)
   const [dragging, setDragging] = useState<DraggingJoint | null>(null)
+  const [savedBuilds, setSavedBuilds] = useState<MechBuild[]>([])
+  const [library, setLibrary] = useState<ComponentDef[]>(getLibrary)
+  const [editingDef, setEditingDef] = useState<ComponentDef | null>(null)
+  const [hangarView, setHangarView] = useState<ViewKind>('front')
   const canvasRef = useRef<HTMLDivElement>(null)
 
-  const library = DEV_LIBRARY
-  const layout = useMemo(() => layoutBuild(build, library, 'front'), [build])
+  useEffect(() => {
+    loadLibrary().then(setLibrary)
+    window.api.loadBuilds().then(setSavedBuilds)
+  }, [])
+
+  async function refreshLibrary() {
+    setLibrary(await loadLibrary())
+  }
+
+  async function handleSaveBuild() {
+    await window.api.saveBuild(build)
+    setSavedBuilds(await window.api.loadBuilds())
+  }
+
+  async function handleLoadBuild(b: MechBuild) {
+    setBuild(b)
+    setHeld(null)
+    setError(null)
+    setPendingEdge(null)
+  }
+
+  async function handleDeleteBuild(id: string) {
+    await window.api.deleteBuild(id)
+    setSavedBuilds(await window.api.loadBuilds())
+  }
+
+  async function handleSaveComponent(def: ComponentDef) {
+    // Store sprite URLs as relative paths for persistence.
+    await window.api.saveComponentDef(def)
+    await refreshLibrary()
+    setEditingDef(null)
+  }
+  const layout = useMemo(() => layoutBuild(build, library, hangarView), [build, hangarView, library])
   const bounds = useMemo(() => layoutBounds(layout), [layout])
   const physics = useMemo(() => buildPhysics(build, library), [build])
   const validation = useMemo(() => validateBuild(build, library), [build])
 
-  // Group library by slot (exclude chassis — always pre-placed as root).
+  // Group library by slot for the palette.
   const palette = useMemo(() => {
     const groups = new Map<Slot, ComponentDef[]>()
     for (const def of library) {
-      if (def.slot === 'chassis') continue
       const list = groups.get(def.slot) ?? []
       list.push(def)
       groups.set(def.slot, list)
@@ -170,8 +223,8 @@ export default function Hangar({ devMode: _devMode, onLaunch, onNavigate }: Hang
 
     // Compute pivot in screen pixels: design-space coords × current --s value.
     const scaleFactor = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--s')) || 1
-    const pivotX = (jointEntry.x + parentPoint.front.x + offsetX) * scaleFactor
-    const pivotY = (jointEntry.y + parentPoint.front.y + offsetY) * scaleFactor
+    const pivotX = (jointEntry.x * buildZoom + parentPoint[hangarView].x * buildZoom + offsetX) * scaleFactor
+    const pivotY = (jointEntry.y * buildZoom + parentPoint[hangarView].y * buildZoom + offsetY) * scaleFactor
 
     const rect = canvasRef.current?.getBoundingClientRect()
     const mx = e.clientX - (rect?.left ?? 0)
@@ -204,11 +257,27 @@ export default function Hangar({ devMode: _devMode, onLaunch, onNavigate }: Hang
     setDragging(null)
   }, [])
 
-  // Canvas centering offset (in design-space pixels — scaled via s()).
+  // Person-for-scale: sized relative to the chassis root's size class.
+  const chassisDef = library.find(d => d.id === build.instances.find(i => i.instanceId === build.rootInstanceId)?.defId)
+  const chassisSize: ComponentSize = chassisDef?.size ?? 'medium'
+  const personRatio = PERSON_RATIO[chassisSize]
+
+  // Canvas dimensions and zoom to fit the build inside.
   const canvasW = 300
   const canvasH = 300
-  const offsetX = (canvasW - bounds.width) / 2 - bounds.x
-  const offsetY = (canvasH - bounds.height) / 2 - bounds.y
+  const padding = 20
+  const buildZoom = bounds.width > 0 && bounds.height > 0
+    ? Math.min((canvasW - padding * 2) / bounds.width, (canvasH - padding * 2) / bounds.height, 1)
+    : 1
+  const z = (px: number) => s(px * buildZoom)
+
+  const personH = bounds.height * buildZoom * personRatio
+  const personW = personH * (20 / 50)
+
+  const scaledW = bounds.width * buildZoom
+  const scaledH = bounds.height * buildZoom
+  const offsetX = (canvasW - scaledW) / 2 - bounds.x * buildZoom
+  const offsetY = (canvasH - scaledH) / 2 - bounds.y * buildZoom
 
   return (
     <div className="hangar">
@@ -221,7 +290,7 @@ export default function Hangar({ devMode: _devMode, onLaunch, onNavigate }: Hang
         {/* ─── Component palette ─── */}
         <div className="hangar__palette">
           <div className="hangar__section-title">COMPONENTS</div>
-          {SLOT_ORDER.filter(s => s !== 'chassis').map(slot => {
+          {SLOT_ORDER.map(slot => {
             const defs = palette.get(slot)
             if (!defs) return null
             return (
@@ -231,7 +300,23 @@ export default function Hangar({ devMode: _devMode, onLaunch, onNavigate }: Hang
                   <button
                     key={def.id}
                     className={`hangar__comp-btn${held?.id === def.id ? ' hangar__comp-btn--held' : ''}`}
-                    onClick={() => { setHeld(held?.id === def.id ? null : def); setPendingEdge(null) }}
+                    onClick={() => {
+                      if (def.slot === 'chassis') {
+                        // Swap root chassis — keep existing attachments if possible.
+                        setBuild(prev => ({
+                          ...prev,
+                          instances: prev.instances.map(i =>
+                            i.instanceId === prev.rootInstanceId ? { ...i, defId: def.id } : i
+                          ),
+                        }))
+                        setHeld(null)
+                      } else {
+                        setHeld(held?.id === def.id ? null : def)
+                      }
+                      setPendingEdge(null)
+                    }}
+                    onContextMenu={(e) => { e.preventDefault(); setEditingDef(def) }}
+                    title={def.slot === 'chassis' ? 'Click to swap chassis · right-click to edit' : 'Click to hold · right-click to edit'}
                   >
                     {def.name}
                     <span className="hangar__comp-stats">
@@ -245,9 +330,36 @@ export default function Hangar({ devMode: _devMode, onLaunch, onNavigate }: Hang
           {held && (
             <div className="hangar__hint">Click a highlighted attach point to place.</div>
           )}
+          <div className="hangar__divider" />
+          <button
+            className="hangar__save-btn"
+            onClick={() => setEditingDef({} as ComponentDef)}
+          >
+            NEW COMPONENT
+          </button>
         </div>
 
-        {/* ─── Schematic canvas ─── */}
+        {/* ─── Schematic canvas / Component editor ─── */}
+        {editingDef !== null ? (
+          <ComponentEditor
+            initial={editingDef.id ? editingDef : undefined}
+            onSave={handleSaveComponent}
+            onCancel={() => setEditingDef(null)}
+          />
+        ) : (
+        /* ─── Schematic canvas ─── */
+        <div className="hangar__canvas-wrapper">
+        <div className="hangar__view-toggle">
+          {(['front', 'rear'] as const).map(v => (
+            <button
+              key={v}
+              className={`hangar__view-btn${hangarView === v ? ' hangar__view-btn--active' : ''}`}
+              onClick={() => setHangarView(v)}
+            >
+              {v.toUpperCase()}
+            </button>
+          ))}
+        </div>
         <div
           ref={canvasRef}
           className="hangar__canvas"
@@ -267,7 +379,7 @@ export default function Hangar({ devMode: _devMode, onLaunch, onNavigate }: Hang
               const hasJointAncestor = !!findJointAncestor(build, entry.instanceId, library)
               const rotStyle = entry.rotation !== 0 ? {
                 transform: `rotate(${entry.rotation}deg)`,
-                transformOrigin: `${s(entry.rotationPivotX - entry.x)} ${s(entry.rotationPivotY - entry.y)}`,
+                transformOrigin: `${z(entry.rotationPivotX - entry.x)} ${z(entry.rotationPivotY - entry.y)}`,
               } : {}
               return (
                 <div
@@ -275,10 +387,10 @@ export default function Hangar({ devMode: _devMode, onLaunch, onNavigate }: Hang
                   className={`hangar__bbox${!isRoot ? ' hangar__bbox--detachable' : ''}${occluded ? ' hangar__bbox--occluded' : ''}${hasJointAncestor ? ' hangar__bbox--jointed' : ''}`}
                   style={{
                     position: 'absolute',
-                    left: s(entry.x),
-                    top: s(entry.y),
-                    width: s(entry.sprite.width),
-                    height: s(entry.sprite.height),
+                    left: z(entry.x),
+                    top: z(entry.y),
+                    width: z(entry.sprite.width),
+                    height: z(entry.sprite.height),
                     borderColor: color,
                     color,
                     ...rotStyle,
@@ -292,11 +404,31 @@ export default function Hangar({ devMode: _devMode, onLaunch, onNavigate }: Hang
                   }}
                   title={isRoot ? 'Root chassis' : hasJointAncestor ? 'Drag to rotate · right-click to remove' : 'Right-click to remove'}
                 >
+                  {entry.sprite.url && !entry.sprite.url.startsWith('data:') && (
+                    <img
+                      src={entry.sprite.url}
+                      className="hangar__bbox-sprite"
+                      draggable={false}
+                    />
+                  )}
                   <span className="hangar__bbox-label">{def?.name ?? entry.defId}</span>
                   {occluded && <span className="hangar__bbox-face-tag">REAR</span>}
                 </div>
               )
             })}
+            {/* Person-for-scale reference */}
+            <img
+              src={PERSON_SVG}
+              className="hangar__person"
+              style={{
+                position: 'absolute',
+                left: z(bounds.x + bounds.width + 8 / buildZoom),
+                top: s(offsetY + scaledH - personH),
+                width: s(personW),
+                height: s(personH),
+              }}
+              draggable={false}
+            />
             {/* Attach-point indicators */}
             {freeParentPoints.map(fp => {
               const point = fp.def.attachPoints.find(p => p.id === fp.pointId)!
@@ -307,8 +439,8 @@ export default function Hangar({ devMode: _devMode, onLaunch, onNavigate }: Hang
                   className={`hangar__attach-point${isEdge ? ' hangar__attach-point--edge' : ''}`}
                   style={{
                     position: 'absolute',
-                    left: s(fp.entry.x + point.front.x - 6),
-                    top: s(fp.entry.y + point.front.y - 6),
+                    left: z(fp.entry.x + point[hangarView].x - 6 / buildZoom),
+                    top: z(fp.entry.y + point[hangarView].y - 6 / buildZoom),
                   }}
                   onClick={(e) => {
                     e.stopPropagation()
@@ -338,6 +470,8 @@ export default function Hangar({ devMode: _devMode, onLaunch, onNavigate }: Hang
             </div>
           )}
         </div>
+        </div>
+        )}
 
         {/* ─── Stats panel ─── */}
         <div className="hangar__stats">
@@ -368,6 +502,36 @@ export default function Hangar({ devMode: _devMode, onLaunch, onNavigate }: Hang
               </div>
             )
           })}
+          <div className="hangar__divider" />
+          <div className="hangar__section-title">BUILD</div>
+          <input
+            className="hangar__name-input"
+            value={build.name}
+            onChange={e => setBuild(prev => ({ ...prev, name: e.target.value }))}
+            placeholder="Build name"
+          />
+          <button className="hangar__save-btn" onClick={handleSaveBuild}>SAVE</button>
+          <button className="hangar__save-btn" onClick={() => setBuild(freshBuild())}>NEW</button>
+          {savedBuilds.length > 0 && (
+            <>
+              <div className="hangar__section-title" style={{ marginTop: s(8) }}>SAVED BUILDS</div>
+              {savedBuilds.map(sb => (
+                <div key={sb.id} className="hangar__saved-build">
+                  <button
+                    className={`hangar__saved-build-name${sb.id === build.id ? ' hangar__saved-build-name--active' : ''}`}
+                    onClick={() => handleLoadBuild(sb)}
+                  >
+                    {sb.name}
+                  </button>
+                  <button
+                    className="hangar__saved-build-del"
+                    onClick={() => handleDeleteBuild(sb.id)}
+                    title="Delete build"
+                  >×</button>
+                </div>
+              ))}
+            </>
+          )}
         </div>
       </div>
 
