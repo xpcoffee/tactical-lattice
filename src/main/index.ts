@@ -10,8 +10,8 @@ function createWindow(): void {
   const win = new BrowserWindow({
     width: 1280,
     height: 800,
-    minWidth: 1280,
-    minHeight: 800,
+    minWidth: 640,
+    minHeight: 400,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: false,
@@ -20,10 +20,17 @@ function createWindow(): void {
     title: 'Tactical Lattice',
   })
 
+  const query: Record<string, string> = {}
+  if (process.env['GAME_START_SCENE']) query.scene = process.env['GAME_START_SCENE']
+  if (process.env['GAME_MECH_ID']) query.mech = process.env['GAME_MECH_ID']
+  if (process.env['GAME_MAP_ID']) query.map = process.env['GAME_MAP_ID']
+
   if (process.env['ELECTRON_RENDERER_URL']) {
-    win.loadURL(process.env['ELECTRON_RENDERER_URL'])
+    const url = new URL(process.env['ELECTRON_RENDERER_URL'])
+    for (const [k, v] of Object.entries(query)) url.searchParams.set(k, v)
+    win.loadURL(url.toString())
   } else {
-    win.loadFile(join(__dirname, '../renderer/index.html'))
+    win.loadFile(join(__dirname, '../renderer/index.html'), { query })
   }
 }
 

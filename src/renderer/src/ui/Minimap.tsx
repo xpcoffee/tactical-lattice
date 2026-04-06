@@ -6,6 +6,7 @@
 // with positions relative to the player (player always at SVG centre).
 
 import { useState, useEffect } from 'react'
+import { s } from '../app/scale'
 import { EventBus } from '../phaser/EventBus'
 import { CombatState, COMBAT_STATE_CHANGED, getLatestState } from '../game/state/combat'
 import { type HexCoord, DIRECTIONS, hexToPixel, hexDistance, hexesInCone } from '../game/hex/grid'
@@ -83,29 +84,29 @@ export default function Minimap({ mode }: MinimapProps) {
 
   return (
     <div style={{
-      padding: isFullscreen ? '0' : '6px 8px',
+      padding: isFullscreen ? '0' : `${s(6)} ${s(8)}`,
       display: 'flex',
       flexDirection: 'column',
-      gap: isFullscreen ? '0' : '4px',
+      gap: isFullscreen ? '0' : s(4),
       height: isFullscreen ? '100%' : 'auto',
     }}>
       {!isFullscreen && (
-        <div style={{ fontSize: '9px', color: '#e6c200', letterSpacing: '0.12em' }}>TACTICAL MAP</div>
+        <div style={{ fontSize: s(9), color: '#e6c200', letterSpacing: '0.12em' }}>TACTICAL MAP</div>
       )}
       {isFullscreen && (
         <div style={{
-          fontSize: '10px',
+          fontSize: s(10),
           color: '#e6c200',
           letterSpacing: '0.15em',
-          padding: '12px 16px 8px',
+          padding: `${s(12)} ${s(16)} ${s(8)}`,
           borderBottom: '1px solid #2a2a3a',
         }}>
           TACTICAL MAP — HJKL/ARROWS TO MOVE · [M] TO CLOSE
         </div>
       )}
       <svg
-        width={isFullscreen ? '100%' : svgSize}
-        height={isFullscreen ? '100%' : svgSize}
+        width="100%"
+        height="100%"
         viewBox={`0 0 ${svgSize} ${svgSize}`}
         preserveAspectRatio="xMidYMid meet"
         style={{ display: 'block', flex: isFullscreen ? '1' : undefined }}

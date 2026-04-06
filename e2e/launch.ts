@@ -12,7 +12,12 @@ export interface GameHandle {
  * Launch the built Electron app and return handles for interaction and validation.
  * Requires `npm run build` to have been run first.
  */
-export async function launchGame(): Promise<GameHandle> {
+export interface LaunchOptions {
+  /** Override the starting scene (defaults to 'combat' for test compat). */
+  scene?: string
+}
+
+export async function launchGame(opts: LaunchOptions = {}): Promise<GameHandle> {
   const mainPath = path.join(__dirname, '../out/main/index.js')
 
   // Chromium requires --no-sandbox inside Docker/containers that lack user namespaces
@@ -22,7 +27,11 @@ export async function launchGame(): Promise<GameHandle> {
 
   const app = await electron.launch({
     args,
-    env: { ...process.env, NODE_ENV: 'test' },
+    env: {
+      ...process.env,
+      NODE_ENV: 'test',
+      GAME_START_SCENE: opts.scene ?? 'combat',
+    },
   })
 
   const page = await app.firstWindow()

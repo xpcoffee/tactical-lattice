@@ -5,6 +5,7 @@ import { HexCoord, hexDistance, isInBounds, hexInDirection, hexesInCone } from '
 import { PendingAction, advanceTicks, queueAction, MoveActionPayload } from '../combat/atb'
 import { AiBehavior, followStep } from '../mech/ai'
 import { GRID_COLS, GRID_ROWS } from '../constants'
+import type { MechBuild } from '../mech/components'
 
 export type EntityType = 'mech' | 'objective'
 
@@ -14,6 +15,7 @@ export interface Entity {
   label: string   // single character shown in far-range targetbox
   position: HexCoord
   ai?: AiBehavior   // undefined = stationary
+  build?: MechBuild  // when set, entity renders as a composited mech
 }
 
 export interface CombatState {
@@ -27,6 +29,12 @@ export const COMBAT_STATE_CHANGED = 'combat-state-changed'
 
 // Store the last emitted state for subscribers that initialize after emission
 let latestState: CombatState | null = null
+
+// Player build — set before combat starts, read by the over-the-shoulder renderer.
+let playerBuild: MechBuild | null = null
+
+export function setPlayerBuild(build: MechBuild): void { playerBuild = build }
+export function getPlayerBuild(): MechBuild | null { return playerBuild }
 
 /** Returns the most recent combat state, or creates initial state if none has been set. */
 export function getLatestState(): CombatState {

@@ -17,8 +17,9 @@ import {
 } from "../../game/constants";
 
 const PERSP_CAM_D = 80;
-const HEX_WORLD_SIZE = 240;
-const LATERAL_SCALE = 3.5;
+// Reference values at 1280 wide; scaled to canvas in computeScaledConstants().
+const REF_HEX_WORLD_SIZE = 240;
+const REF_LATERAL_SCALE = 3.5;
 const HORIZON_X_RATIO = 0.5;
 const HORIZON_Y_RATIO = 0.4;
 const ANCHOR_X_RATIO = 0.2;
@@ -30,15 +31,16 @@ const ENTITY_FADE_DURATION = 350; // ms — entities fade when entering/leaving 
 const HEX_FADE_SPEED = 1 / 0.3; // alpha units/sec — hex outlines fade in 300 ms
 
 // When multiple entities share a hex, they're drawn staggered around the centre.
-const STACK_DX = 10;
-const STACK_DY = 6;
+// Reference values at 1280×800; scaled to canvas in create().
+const REF_STACK_DX = 10;
+const REF_STACK_DY = 6;
 
 // Companion strip: entities standing on the player's hex are drawn in a
 // fixed screen-space row slightly above centre. The first sprite sits just
 // right of screen centre, subsequent entities alternate right/left around it.
 const COMPANION_STRIP_Y_RATIO = 0.52; // just below screen centre
 const COMPANION_STRIP_CENTER_RATIO = 0.55; // first sprite sits just right of centre
-const COMPANION_STRIP_STEP = 180; // px between alternating positions
+const REF_COMPANION_STRIP_STEP = 180; // reference px at 1280 wide
 
 // ─── Hex animation tracking ───────────────────────────────────────────────────
 
@@ -69,13 +71,10 @@ const SPRITE_LIFT_RATIO = 0.10;  // lift sprite this fraction of its height off 
 
 // Enemy mech sprite size as a ratio of the player mech's rendered width,
 // indexed by hex distance to the player (0 = same hex, up to VIEW_RANGE=3).
-// The player sprite is 320 px (Mech.tsx); the enemy bitmap is 80 px native.
-const PLAYER_MECH_PX = 320;
+// Reference player sprite = 320 px at 1280 wide; enemy bitmap = 80 px native.
+const REF_PLAYER_MECH_PX = 320;
 const MECH_SPRITE_NATIVE = 80;
 const MECH_RATIO_BY_DIST = [0.9, 0.1, 0.05, 0.025];
-const MECH_SCALE_BY_DIST = MECH_RATIO_BY_DIST.map(
-  (r) => (PLAYER_MECH_PX * r) / MECH_SPRITE_NATIVE,
-);
 
 export class Combat extends Phaser.Scene {
   private state!: CombatState;
@@ -83,6 +82,17 @@ export class Combat extends Phaser.Scene {
   private playerAnchor!: { x: number; y: number };
   private horizonX!: number;
   private horizonY!: number;
+
+  // Canvas-relative constants (recomputed in create / on resize).
+  private hexWorldSize!: number;
+  private lateralScale!: number;
+  private stackDx!: number;
+  private stackDy!: number;
+  private companionStripStep!: number;
+  private mechScaleByDist!: number[];
+  private fontSize10!: string;
+  private fontSize9!: string;
+  private fontSize8!: string;
 
   // Movement animation — animOffset is added to world coords in worldToScreen.
   // Starts at +delta (view looks like old position), tweens to 0 (new position).
@@ -123,7 +133,25 @@ export class Combat extends Phaser.Scene {
     super("Combat");
   }
 
+  /** Compute canvas-relative constants from the current canvas size. */
+  private computeScaledConstants(): void {
+    const sf = this.scale.width / 1280;
+    this.hexWorldSize = REF_HEX_WORLD_SIZE * sf;
+    this.lateralScale = REF_LATERAL_SCALE * sf;
+    this.stackDx = REF_STACK_DX * sf;
+    this.stackDy = REF_STACK_DY * sf;
+    this.companionStripStep = REF_COMPANION_STRIP_STEP * sf;
+    const playerMechPx = REF_PLAYER_MECH_PX * sf;
+    this.mechScaleByDist = MECH_RATIO_BY_DIST.map(
+      (r) => (playerMechPx * r) / MECH_SPRITE_NATIVE,
+    );
+    this.fontSize10 = `${Math.round(10 * sf)}px`;
+    this.fontSize9 = `${Math.round(9 * sf)}px`;
+    this.fontSize8 = `${Math.round(8 * sf)}px`;
+  }
+
   create(): void {
+    this.computeScaledConstants();
     this.playerAnchor = {
       x: this.scale.width * ANCHOR_X_RATIO,
       y: this.scale.height * ANCHOR_Y_RATIO,
@@ -149,6 +177,18 @@ export class Combat extends Phaser.Scene {
     setLatestState(this.state);
     EventBus.emit("scene-ready", this);
     EventBus.emit(COMBAT_STATE_CHANGED, this.state);
+
+    this.scale.on("resize", () => {
+      this.computeScaledConstants();
+      this.playerAnchor = {
+        x: this.scale.width * ANCHOR_X_RATIO,
+        y: this.scale.height * ANCHOR_Y_RATIO,
+      };
+      this.horizonX = this.scale.width * HORIZON_X_RATIO;
+      this.horizonY = this.scale.height * HORIZON_Y_RATIO;
+      this.drawHexGrid();
+      this.syncEntityVisibility();
+    });
 
     EventBus.on(COMBAT_STATE_CHANGED, (newState: CombatState) => {
       const oldPos = this.state.playerPosition;
@@ -197,7 +237,7 @@ export class Combat extends Phaser.Scene {
             q: newState.playerPosition.q - oldPos.q,
             r: newState.playerPosition.r - oldPos.r,
           },
-          HEX_WORLD_SIZE,
+          this.hexWorldSize,
         );
         this.animOffset.wx = delta.x;
         this.animOffset.wy = delta.y;
@@ -275,7 +315,7 @@ export class Combat extends Phaser.Scene {
     return {
       x:
         this.horizonX +
-        (this.playerAnchor.x - this.horizonX + rx * LATERAL_SCALE) * scale,
+        (this.playerAnchor.x - this.horizonX + rx * this.lateralScale) * scale,
       y: this.horizonY + (this.playerAnchor.y - this.horizonY) * scale,
     };
   }
@@ -284,7 +324,7 @@ export class Combat extends Phaser.Scene {
     q: number;
     r: number;
   }): { x: number; y: number } | null {
-    const p = hexToPixel(rel, HEX_WORLD_SIZE);
+    const p = hexToPixel(rel, this.hexWorldSize);
     return this.worldToScreen(p.x, p.y);
   }
 
@@ -293,8 +333,8 @@ export class Combat extends Phaser.Scene {
   // between the captured from-point and the live target position.
   // Works uniformly across ground→ground, ground→strip, and strip→ground.
   private entityMechScale(entity: VisibleEntity): number {
-    const idx = Math.min(entity.distance, MECH_SCALE_BY_DIST.length - 1);
-    return MECH_SCALE_BY_DIST[idx];
+    const idx = Math.min(entity.distance, this.mechScaleByDist.length - 1);
+    return this.mechScaleByDist[idx];
   }
 
   private scheduleEntityGlides(
@@ -439,7 +479,7 @@ export class Combat extends Phaser.Scene {
 
   private strokeHex(player: HexCoord, h: HexCoord, alpha: number): void {
     const rel = { q: h.q - player.q, r: h.r - player.r };
-    const center = hexToPixel(rel, HEX_WORLD_SIZE);
+    const center = hexToPixel(rel, this.hexWorldSize);
 
     this.gridGfx.lineStyle(1, 0x4a4a7a, alpha);
     let started = false;
@@ -447,8 +487,8 @@ export class Combat extends Phaser.Scene {
     for (let i = 0; i < 6; i++) {
       const vAngle = (Math.PI / 3) * i;
       const pos = this.worldToScreen(
-        center.x + HEX_WORLD_SIZE * Math.cos(vAngle),
-        center.y + HEX_WORLD_SIZE * Math.sin(vAngle),
+        center.x + this.hexWorldSize * Math.cos(vAngle),
+        center.y + this.hexWorldSize * Math.sin(vAngle),
       );
       if (!pos) continue;
       if (!started) {
@@ -519,7 +559,7 @@ export class Combat extends Phaser.Scene {
       const y = this.scale.height * COMPANION_STRIP_Y_RATIO;
       const i = info.index;
       const slot = i === 0 ? 0 : i % 2 === 1 ? (i + 1) / 2 : -(i / 2);
-      return { x: centreX + slot * COMPANION_STRIP_STEP, y };
+      return { x: centreX + slot * this.companionStripStep, y };
     }
 
     // Ground rendering: project the hex centre, then apply stagger offset.
@@ -528,13 +568,13 @@ export class Combat extends Phaser.Scene {
       q: entity.position.q - player.q,
       r: entity.position.r - player.r,
     };
-    const p = hexToPixel(rel, HEX_WORLD_SIZE);
+    const p = hexToPixel(rel, this.hexWorldSize);
     const base = this.worldToScreen(p.x, p.y);
     if (!base) return null;
     const stackOffset = info.index - (info.groupSize - 1) / 2;
     return {
-      x: base.x + stackOffset * STACK_DX,
-      y: base.y + stackOffset * STACK_DY,
+      x: base.x + stackOffset * this.stackDx,
+      y: base.y + stackOffset * this.stackDy,
     };
   }
 
@@ -616,7 +656,7 @@ export class Combat extends Phaser.Scene {
         if (newV === "sensor") {
           label = this.add
             .text(pos.x, pos.y, entity.label, {
-              fontSize: "10px",
+              fontSize: this.fontSize10,
               color: "#4a7a4a",
             })
             .setOrigin(0.5)
@@ -642,7 +682,7 @@ export class Combat extends Phaser.Scene {
           } else if (newV === "sensor" && !render.label) {
             render.label = this.add
               .text(pos.x, pos.y, entity.label, {
-                fontSize: "10px",
+                fontSize: this.fontSize10,
                 color: "#4a7a4a",
               })
               .setOrigin(0.5)
@@ -778,7 +818,7 @@ export class Combat extends Phaser.Scene {
     if (!render.nameLabel) {
       render.nameLabel = this.add
         .text(0, 0, "", {
-          fontSize: "9px",
+          fontSize: this.fontSize9,
           color: "#e6c200",
           fontFamily: "monospace",
         })
@@ -792,7 +832,7 @@ export class Combat extends Phaser.Scene {
     if (!render.distLabel) {
       render.distLabel = this.add
         .text(0, 0, "", {
-          fontSize: "8px",
+          fontSize: this.fontSize8,
           color: "#b8b8b8",
           fontFamily: "monospace",
         })
